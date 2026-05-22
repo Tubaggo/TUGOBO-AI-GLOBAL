@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
   and,
   channels,
@@ -15,9 +15,11 @@ import type {
 } from "@tugobo/shared";
 import {
   MANYCHAT_LOCAL_TEST_HOTEL_ID,
+  MANYCHAT_LOCAL_TEST_SECRET,
   resolveManychatBridgeConfig,
   sanitizeManychatBridgeMetadata,
 } from "@/lib/server/integrations/manychat-config";
+import { resolvePilotHotelId } from "@/lib/server/pilot-hotel";
 
 export type ManagedChannelType = Extract<ConnectedChannelType, "web_chat" | "instagram" | "whatsapp">;
 export type ChannelHealthStatus = "active" | "pending" | "disabled" | "error";
@@ -29,6 +31,21 @@ export type ConnectedChannelDisplay = {
   lastConnectedAt: string | null;
   lastError: string | null;
   webhookState: "ready" | "not_configured";
+  setup: ChannelSetupDetails;
+};
+
+export type ChannelSetupDetails = {
+  channelType: ManagedChannelType;
+  inboundWebhookUrl: string | null;
+  workspaceId: string;
+  hotelId: string;
+  status: ChannelHealthStatus;
+  connectionHealth: "healthy" | "pending" | "error" | "disabled";
+  secret: {
+    available: boolean;
+    masked: string | null;
+    copyAllowed: boolean;
+  };
 };
 
 export type ServerConnectedChannelConfig = {
@@ -65,6 +82,11 @@ type ResolveOutboundConfigInput = {
   externalUserId?: string;
 };
 
+type RotateChannelSecretInput = {
+  hotelId: string;
+  channelType: Extract<ManagedChannelType, "instagram" | "whatsapp">;
+};
+
 const MANAGED_CHANNELS: ManagedChannelType[] = ["web_chat", "instagram", "whatsapp"];
 
 function assertDb(): DB {
@@ -76,6 +98,34 @@ function displayName(channelType: ManagedChannelType): ConnectedChannelDisplay["
   if (channelType === "web_chat") return "Web Chat";
   if (channelType === "instagram") return "Instagram";
   return "WhatsApp";
+}
+
+function isInternalDevSafeMode(): boolean {
+  return (
+    process.env.NODE_ENV !== "production" ||
+    process.env.CHANNEL_ADMIN_INTERNAL_SETUP === "true"
+  );
+}
+
+export function resolveSettingsHotelId(): string | null {
+  const pilotHotelId = resolvePilotHotelId();
+  if (pilotHotelId) return pilotHotelId;
+  if (process.env.NODE_ENV !== "production") return MANYCHAT_LOCAL_TEST_HOTEL_ID;
+  return null;
+}
+
+export function validateSettingsHotelId(requestedHotelId?: string | null): string {
+  const hotelId = resolveSettingsHotelId();
+
+  if (!hotelId) {
+    throw new Error("hotel_not_configured");
+  }
+
+  if (requestedHotelId && requestedHotelId !== hotelId) {
+    throw new Error("invalid_hotel_id");
+  }
+
+  return hotelId;
 }
 
 export function normalizeChannelStatus(status: ConnectedChannelStatus | string | null | undefined): ChannelHealthStatus {
@@ -103,6 +153,34 @@ function stringValue(input: unknown): string | undefined {
 
 function metadataSecret(metadata: Record<string, unknown>) {
   return stringValue(metadata.inboundSecret) ?? stringValue(metadata.inbound_secret);
+}
+
+function connectionHealth(status: ChannelHealthStatus): ChannelSetupDetails["connectionHealth"] {
+  if (status === "active") return "healthy";
+  if (status === "error") return "error";
+  if (status === "disabled") return "disabled";
+  return "pending";
+}
+
+function maskSecret(secret: string | undefined): string | null {
+  if (!secret) return null;
+  if (secret.length <= 8) return "****";
+  return `${secret.slice(0, 3)}****${secret.slice(-3)}`;
+}
+
+function generateChannelSecret(): string {
+  return `tgb_${randomBytes(24).toString("base64url")}`;
+}
+
+function channelWebhookUrl(origin: string | undefined, channelType: ManagedChannelType): string | null {
+  if (channelType !== "instagram" && channelType !== "whatsapp") {
+    return null;
+  }
+
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || origin?.trim();
+  if (!baseUrl) return null;
+
+  return new URL("/api/integrations/manychat/inbound", baseUrl).toString();
 }
 
 function secretsMatch(expected: string, provided: string): boolean {
@@ -144,7 +222,9 @@ function toServerConfig(
   };
 }
 
-function toDisplay(config: ServerConnectedChannelConfig): ConnectedChannelDisplay {
+function toDisplay(config: ServerConnectedChannelConfig, origin?: string): ConnectedChannelDisplay {
+  const secretAvailable = Boolean(config.inboundSecret);
+
   return {
     channelType: config.channelType,
     displayName: displayName(config.channelType),
@@ -153,10 +233,23 @@ function toDisplay(config: ServerConnectedChannelConfig): ConnectedChannelDispla
     lastError: config.status === "error" ? config.lastError : null,
     webhookState:
       config.channelType === "web_chat" || config.inboundSecret ? "ready" : "not_configured",
+    setup: {
+      channelType: config.channelType,
+      inboundWebhookUrl: channelWebhookUrl(origin, config.channelType),
+      workspaceId: config.hotelId,
+      hotelId: config.hotelId,
+      status: config.status,
+      connectionHealth: connectionHealth(config.status),
+      secret: {
+        available: secretAvailable,
+        masked: maskSecret(config.inboundSecret),
+        copyAllowed: secretAvailable && isInternalDevSafeMode(),
+      },
+    },
   };
 }
 
-function localDevDisplayChannels(): ConnectedChannelDisplay[] {
+function localDevDisplayChannels(hotelId: string, origin?: string): ConnectedChannelDisplay[] {
   return [
     {
       channelType: "web_chat",
@@ -165,6 +258,19 @@ function localDevDisplayChannels(): ConnectedChannelDisplay[] {
       lastConnectedAt: null,
       lastError: null,
       webhookState: "ready",
+      setup: {
+        channelType: "web_chat",
+        inboundWebhookUrl: null,
+        workspaceId: hotelId,
+        hotelId,
+        status: "active",
+        connectionHealth: "healthy",
+        secret: {
+          available: false,
+          masked: null,
+          copyAllowed: false,
+        },
+      },
     },
     {
       channelType: "instagram",
@@ -173,6 +279,19 @@ function localDevDisplayChannels(): ConnectedChannelDisplay[] {
       lastConnectedAt: null,
       lastError: null,
       webhookState: "ready",
+      setup: {
+        channelType: "instagram",
+        inboundWebhookUrl: channelWebhookUrl(origin, "instagram"),
+        workspaceId: hotelId,
+        hotelId,
+        status: "active",
+        connectionHealth: "healthy",
+        secret: {
+          available: true,
+          masked: maskSecret(MANYCHAT_LOCAL_TEST_SECRET),
+          copyAllowed: isInternalDevSafeMode(),
+        },
+      },
     },
     {
       channelType: "whatsapp",
@@ -181,13 +300,26 @@ function localDevDisplayChannels(): ConnectedChannelDisplay[] {
       lastConnectedAt: null,
       lastError: null,
       webhookState: "not_configured",
+      setup: {
+        channelType: "whatsapp",
+        inboundWebhookUrl: channelWebhookUrl(origin, "whatsapp"),
+        workspaceId: hotelId,
+        hotelId,
+        status: "pending",
+        connectionHealth: "pending",
+        secret: {
+          available: false,
+          masked: null,
+          copyAllowed: false,
+        },
+      },
     },
   ];
 }
 
-export function getLocalDevConnectedChannels(hotelId: string): ConnectedChannelDisplay[] | null {
+export function getLocalDevConnectedChannels(hotelId: string, origin?: string): ConnectedChannelDisplay[] | null {
   if (process.env.NODE_ENV === "production") return null;
-  return hotelId === MANYCHAT_LOCAL_TEST_HOTEL_ID ? localDevDisplayChannels() : null;
+  return hotelId === MANYCHAT_LOCAL_TEST_HOTEL_ID ? localDevDisplayChannels(hotelId, origin) : null;
 }
 
 export async function getConnectedChannel(
@@ -208,15 +340,15 @@ export async function getConnectedChannel(
   return row ? toServerConfig(row, hotelId, channelType) : null;
 }
 
-export async function listConnectedChannels(hotelId: string): Promise<ConnectedChannelDisplay[]> {
-  const localDevChannels = getLocalDevConnectedChannels(hotelId);
+export async function listConnectedChannels(hotelId: string, origin?: string): Promise<ConnectedChannelDisplay[]> {
+  const localDevChannels = getLocalDevConnectedChannels(hotelId, origin);
   if (localDevChannels) {
     return localDevChannels;
   }
 
   if (!db) {
     return MANAGED_CHANNELS.map((channelType) =>
-      toDisplay(toServerConfig(null, hotelId, channelType))
+      toDisplay(toServerConfig(null, hotelId, channelType), origin)
     );
   }
 
@@ -228,8 +360,83 @@ export async function listConnectedChannels(hotelId: string): Promise<ConnectedC
 
   return MANAGED_CHANNELS.map((channelType) => {
     const row = rows.find((candidate) => candidate.channelType === channelType) ?? null;
-    return toDisplay(toServerConfig(row, hotelId, channelType));
+    return toDisplay(toServerConfig(row, hotelId, channelType), origin);
   });
+}
+
+export async function rotateChannelSecret(input: RotateChannelSecretInput): Promise<{
+  channelType: RotateChannelSecretInput["channelType"];
+  status: ChannelHealthStatus;
+  maskedSecret: string;
+  secret?: string;
+  copyAllowed: boolean;
+  stored: boolean;
+}> {
+  if (
+    process.env.NODE_ENV !== "production" &&
+    input.hotelId === MANYCHAT_LOCAL_TEST_HOTEL_ID
+  ) {
+    return {
+      channelType: input.channelType,
+      status: input.channelType === "instagram" ? "active" : "pending",
+      maskedSecret: maskSecret(MANYCHAT_LOCAL_TEST_SECRET) ?? "****",
+      secret: isInternalDevSafeMode() ? MANYCHAT_LOCAL_TEST_SECRET : undefined,
+      copyAllowed: isInternalDevSafeMode(),
+      stored: false,
+    };
+  }
+
+  const database = assertDb();
+  const nextSecret = generateChannelSecret();
+  const now = new Date();
+  const provider = "manychat" as const;
+
+  const [existing] = await database
+    .select({ id: channels.id, metadata: channels.metadata })
+    .from(channels)
+    .where(and(eq(channels.hotelId, input.hotelId), eq(channels.channelType, input.channelType)))
+    .orderBy(desc(channels.createdAt))
+    .limit(1);
+
+  if (existing?.id) {
+    const existingMetadata = metadataRecord(existing.metadata);
+    await database
+      .update(channels)
+      .set({
+        provider,
+        inboundSecret: nextSecret,
+        secret: null,
+        status: "pending",
+        lastError: null,
+        metadata: {
+          ...sanitizeManychatBridgeMetadata(existingMetadata),
+          secretRotatedAt: now.toISOString(),
+        },
+      })
+      .where(eq(channels.id, existing.id));
+  } else {
+    await database.insert(channels).values({
+      hotelId: input.hotelId,
+      provider,
+      channelType: input.channelType,
+      status: "pending",
+      inboundSecret: nextSecret,
+      metadata: {
+        secretRotatedAt: now.toISOString(),
+      },
+    });
+  }
+
+  const copyAllowed = isInternalDevSafeMode();
+
+  return {
+    channelType: input.channelType,
+    status: "pending",
+    maskedSecret: maskSecret(nextSecret) ?? "****",
+    secret: copyAllowed ? nextSecret : undefined,
+    copyAllowed,
+    stored: true,
+  };
 }
 
 export async function updateConnectedChannelStatus(input: UpdateConnectedChannelStatusInput): Promise<void> {

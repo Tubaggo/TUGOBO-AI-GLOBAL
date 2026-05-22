@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listManychatDevRuntimeEvents } from "@/lib/server/integrations/manychat-dev-events";
+import {
+  clearManychatDevRuntimeEvents,
+  getManychatDevRuntimeEventsPath,
+  listManychatDevRuntimeEvents,
+} from "@/lib/server/integrations/manychat-dev-events";
 
 export const runtime = "nodejs";
 
@@ -16,5 +20,19 @@ export async function GET(req: NextRequest) {
     ok: true,
     events,
     lastEventAt,
+  });
+}
+
+export async function DELETE() {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ ok: false, error: "not_available" }, { status: 404 });
+  }
+
+  clearManychatDevRuntimeEvents();
+
+  return NextResponse.json({
+    ok: true,
+    reset: true,
+    path: getManychatDevRuntimeEventsPath(),
   });
 }

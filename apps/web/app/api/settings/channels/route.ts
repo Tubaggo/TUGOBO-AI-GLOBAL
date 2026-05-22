@@ -1,33 +1,30 @@
 import { NextResponse } from "next/server";
-import { listConnectedChannels } from "@/lib/server/channels/service";
-import { MANYCHAT_LOCAL_TEST_HOTEL_ID } from "@/lib/server/integrations/manychat-config";
-import { resolvePilotHotelId } from "@/lib/server/pilot-hotel";
+import { listConnectedChannels, validateSettingsHotelId } from "@/lib/server/channels/service";
 
 export const runtime = "nodejs";
 
-function resolveSettingsHotelId(): string | null {
-  const pilotHotelId = resolvePilotHotelId();
-  if (pilotHotelId) return pilotHotelId;
-  if (process.env.NODE_ENV !== "production") return MANYCHAT_LOCAL_TEST_HOTEL_ID;
-  return null;
-}
+export async function GET(req: Request) {
+  let hotelId: string;
 
-export async function GET() {
-  const hotelId = resolveSettingsHotelId();
-
-  if (!hotelId) {
+  try {
+    hotelId = validateSettingsHotelId(new URL(req.url).searchParams.get("hotel_id"));
+  } catch (err) {
+    const code = err instanceof Error ? err.message : "unknown_error";
     return NextResponse.json(
       {
         ok: false,
-        error: "hotel_not_configured",
-        message: "Hotel workspace is not configured.",
+        error: code === "invalid_hotel_id" ? "invalid_hotel_id" : "hotel_not_configured",
+        message:
+          code === "invalid_hotel_id"
+            ? "Requested hotel_id does not match the active workspace."
+            : "Hotel workspace is not configured.",
       },
-      { status: 503 }
+      { status: code === "invalid_hotel_id" ? 403 : 503 }
     );
   }
 
   try {
-    const channels = await listConnectedChannels(hotelId);
+    const channels = await listConnectedChannels(hotelId, new URL(req.url).origin);
     return NextResponse.json({ ok: true, hotelId, channels });
   } catch {
     return NextResponse.json(

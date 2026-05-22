@@ -63,7 +63,6 @@ async function handleLocalDevFallback(normalized: NormalizedManychatInboundMessa
     externalUserId: normalized.externalUserId,
     externalId: `manychat:${normalized.channel}:${normalized.externalUserId}`,
     guestName: normalized.guestName,
-    guestPhone: normalized.guestPhone,
     message: normalized.message,
   });
 

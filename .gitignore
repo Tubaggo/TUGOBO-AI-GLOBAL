@@ -28,6 +28,10 @@ yarn-error.log*
 .turbo
 *.tsbuildinfo
 
+# Local dev-only runtime state
+.tugobo-dev/
+apps/web/.tugobo-dev/
+
 # Editor
 .vscode/
 *.suo

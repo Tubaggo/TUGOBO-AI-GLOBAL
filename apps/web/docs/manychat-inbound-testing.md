@@ -22,6 +22,22 @@ In local development, this payload works without a real Manychat hotel/channel r
 
 If live ops is configured, the webhook bridges into the existing demo conversation ingestion flow. If live ops is not configured, it returns mock success instead of throwing a server error.
 
+Local mock conversation events are persisted across dev server restarts in:
+
+```text
+apps/web/.tugobo-dev/manychat-dev-events.json
+```
+
+The file is gitignored and stores only dev conversation event fields needed by the panel. It does not store shared secrets, internal tokens, outbound tokens, or phone numbers.
+
+To reset local mock events, either delete that file or call this dev-only endpoint:
+
+```powershell
+Invoke-RestMethod `
+  -Method Delete `
+  -Uri "http://localhost:3000/api/integrations/manychat/dev-events"
+```
+
 ## Webhook URL
 
 ```text
