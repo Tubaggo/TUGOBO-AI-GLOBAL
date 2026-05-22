@@ -32,8 +32,18 @@ const defaultHours: Record<number, { open: boolean; from: string; to: string }> 
   6: { open: true, from: "10:00", to: "20:00" },
 };
 
-type ChannelConnectionStatus = "active" | "pending" | "disabled" | "error";
+type ChannelConnectionStatus = "active" | "pending" | "degraded" | "disabled" | "error";
 type ChannelConnectionHealth = "healthy" | "pending" | "error" | "disabled";
+type ChannelHealth = {
+  channelType: "web_chat" | "instagram" | "whatsapp";
+  status: ChannelConnectionStatus;
+  lastInboundAt: string | null;
+  lastOutboundAt: string | null;
+  lastTestAt: string | null;
+  lastError: string | null;
+  messageCountToday: number;
+  failedDeliveriesToday: number;
+};
 type ChannelSetupDetails = {
   channelType: "web_chat" | "instagram" | "whatsapp";
   inboundWebhookUrl: string | null;
@@ -55,6 +65,7 @@ type ChannelConnection = {
   lastError: string | null;
   webhookState: "ready" | "not_configured";
   setup: ChannelSetupDetails;
+  health?: ChannelHealth;
 };
 
 type ChannelTestResult = {
@@ -123,6 +134,17 @@ const fallbackChannels: ChannelConnection[] = [
   },
 ];
 
+function mergeChannelHealth(
+  channels: ChannelConnection[],
+  health: ChannelHealth[] | undefined
+): ChannelConnection[] {
+  if (!health?.length) return channels;
+  return channels.map((channel) => ({
+    ...channel,
+    health: health.find((item) => item.channelType === channel.channelType),
+  }));
+}
+
 export default function SettingsPage() {
   const pathname = usePathname();
   const isSalesPreview = pathname.startsWith("/demo/otel-paneli");
@@ -153,14 +175,21 @@ export default function SettingsPage() {
       if (isSalesPreview) return;
 
       try {
-        const res = await fetch("/api/settings/channels");
-        const data = (await res.json().catch(() => null)) as {
+        const [channelsRes, healthRes] = await Promise.all([
+          fetch("/api/settings/channels"),
+          fetch("/api/settings/channels/health"),
+        ]);
+        const data = (await channelsRes.json().catch(() => null)) as {
           ok?: boolean;
           channels?: ChannelConnection[];
         } | null;
+        const healthData = (await healthRes.json().catch(() => null)) as {
+          ok?: boolean;
+          channels?: ChannelHealth[];
+        } | null;
 
         if (!cancelled && data?.ok && Array.isArray(data.channels)) {
-          setChannelConnections(data.channels);
+          setChannelConnections(mergeChannelHealth(data.channels, healthData?.channels));
         }
       } catch {
         // Keep the local safe fallback visible.
@@ -198,14 +227,21 @@ export default function SettingsPage() {
     if (isSalesPreview) return;
 
     try {
-      const res = await fetch("/api/settings/channels");
-      const data = (await res.json().catch(() => null)) as {
+      const [channelsRes, healthRes] = await Promise.all([
+        fetch("/api/settings/channels"),
+        fetch("/api/settings/channels/health"),
+      ]);
+      const data = (await channelsRes.json().catch(() => null)) as {
         ok?: boolean;
         channels?: ChannelConnection[];
       } | null;
+      const healthData = (await healthRes.json().catch(() => null)) as {
+        ok?: boolean;
+        channels?: ChannelHealth[];
+      } | null;
 
       if (data?.ok && Array.isArray(data.channels)) {
-        setChannelConnections(data.channels);
+        setChannelConnections(mergeChannelHealth(data.channels, healthData?.channels));
       }
     } catch {
       // Keep the last safe state visible.
@@ -524,7 +560,8 @@ function ChannelConnectionRow({
       : channel.channelType === "instagram"
         ? Instagram
         : MessageSquare;
-  const status = statusView(channel.status);
+  const health = channel.health;
+  const status = statusView(health?.status ?? channel.status);
 
   return (
     <div className="py-4 first:pt-0 last:pb-0">
@@ -547,6 +584,39 @@ function ChannelConnectionRow({
                 <AlertCircle className="h-3 w-3 shrink-0" />
                 <span className="truncate">{channel.lastError}</span>
               </p>
+            ) : null}
+            {health ? (
+              <div className="mt-2 space-y-1.5">
+                <p className="text-xs text-white/38">
+                  {health.lastInboundAt
+                    ? `Son mesaj ${formatConnectionDate(health.lastInboundAt)}`
+                    : "Son mesaj bekleniyor"}
+                </p>
+                <div className="flex flex-wrap gap-1.5 text-[10px] text-white/34">
+                  <span className="rounded-full bg-white/[0.04] px-2 py-0.5">
+                    Günlük mesaj {health.messageCountToday}
+                  </span>
+                  <span className="rounded-full bg-white/[0.04] px-2 py-0.5">
+                    Teslimat hatası {health.failedDeliveriesToday}
+                  </span>
+                  {health.lastOutboundAt ? (
+                    <span className="rounded-full bg-white/[0.04] px-2 py-0.5">
+                      Yanıt gönderildi {formatConnectionDate(health.lastOutboundAt)}
+                    </span>
+                  ) : null}
+                  {health.lastTestAt ? (
+                    <span className="rounded-full bg-white/[0.04] px-2 py-0.5">
+                      Test {formatConnectionDate(health.lastTestAt)}
+                    </span>
+                  ) : null}
+                </div>
+                {health.lastError && !channel.lastError ? (
+                  <p className="flex items-center gap-1.5 text-xs text-red-300/80">
+                    <AlertCircle className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{health.lastError}</span>
+                  </p>
+                ) : null}
+              </div>
             ) : null}
             {testResult ? (
               <p className={cn("mt-1 text-xs", testResultClass(testResult.status))}>
@@ -724,6 +794,14 @@ function statusView(status: ChannelConnectionStatus) {
       label: "Bağlı",
       icon: Wifi,
       className: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300",
+    };
+  }
+
+  if (status === "degraded") {
+    return {
+      label: "Teslimat bekleniyor",
+      icon: Clock3,
+      className: "border-amber-500/25 bg-amber-500/10 text-amber-300",
     };
   }
 

@@ -14,11 +14,30 @@ import {
   type NormalizedManychatInboundMessage,
 } from "@/lib/server/integrations/manychat";
 import { recordManychatDevRuntimeEvent } from "@/lib/server/integrations/manychat-dev-events";
+import { updateChannelHealthFromEvent } from "@/lib/server/channels/service";
+import { recordOperationFeedEvent } from "@/lib/server/operations/operation-feed";
 
 export const runtime = "nodejs";
 
 async function handleLocalDevFallback(normalized: NormalizedManychatInboundMessage) {
   if (normalized.secret !== MANYCHAT_LOCAL_TEST_SECRET) {
+    await updateChannelHealthFromEvent({
+      hotelId: normalized.hotelId,
+      channelType: normalized.channel,
+      status: "error",
+      deliveryFailed: true,
+      incrementMessageCount: false,
+      lastError: "Yetkisiz kanal isteği engellendi.",
+    });
+    await recordOperationFeedEvent({
+      hotelId: normalized.hotelId,
+      channel: normalized.channel,
+      eventType: "unauthorized_channel_request",
+      title: "Teslimat hatası",
+      description: "Yetkisiz kanal isteği engellendi.",
+      severity: "error",
+    });
+
     return NextResponse.json(
       {
         success: false,
@@ -64,6 +83,31 @@ async function handleLocalDevFallback(normalized: NormalizedManychatInboundMessa
     externalId: `manychat:${normalized.channel}:${normalized.externalUserId}`,
     guestName: normalized.guestName,
     message: normalized.message,
+  });
+  await updateChannelHealthFromEvent({
+    hotelId: normalized.hotelId,
+    channelType: normalized.channel,
+    direction: "inbound",
+    status: "active",
+    lastError: null,
+  });
+  await recordOperationFeedEvent({
+    hotelId: normalized.hotelId,
+    channel: normalized.channel,
+    eventType: "guest_request_received",
+    title: "Misafir talebi alındı",
+    description: "Instagram üzerinden yeni misafir talebi alındı.",
+    severity: "info",
+    conversationId: `demo-manychat-${normalized.channel}-${normalized.externalUserId}`,
+  });
+  await recordOperationFeedEvent({
+    hotelId: normalized.hotelId,
+    channel: normalized.channel,
+    eventType: "ai_support_prepared",
+    title: "AI destek hazırlandı",
+    description: "AI destek hazır.",
+    severity: "success",
+    conversationId: `demo-manychat-${normalized.channel}-${normalized.externalUserId}`,
   });
 
   return NextResponse.json({
@@ -196,6 +240,23 @@ export async function POST(req: Request) {
     }
 
     if (code === "invalid_secret") {
+      await updateChannelHealthFromEvent({
+        hotelId: normalized.hotelId,
+        channelType: normalized.channel,
+        status: "error",
+        deliveryFailed: true,
+        incrementMessageCount: false,
+        lastError: "Yetkisiz kanal isteği engellendi.",
+      });
+      await recordOperationFeedEvent({
+        hotelId: normalized.hotelId,
+        channel: normalized.channel,
+        eventType: "unauthorized_channel_request",
+        title: "Teslimat hatası",
+        description: "Yetkisiz kanal isteği engellendi.",
+        severity: "error",
+      });
+
       return NextResponse.json(
         { success: false, error: "forbidden", message: "Shared secret validation failed." },
         { status: 403 }

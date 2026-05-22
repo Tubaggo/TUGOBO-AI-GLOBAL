@@ -3,12 +3,14 @@ import { z } from "zod";
 import {
   getConnectedChannel,
   type ManagedChannelType,
+  updateChannelHealthFromEvent,
   validateSettingsHotelId,
 } from "@/lib/server/channels/service";
 import {
   MANYCHAT_LOCAL_TEST_HOTEL_ID,
   MANYCHAT_LOCAL_TEST_SECRET,
 } from "@/lib/server/integrations/manychat-config";
+import { recordOperationFeedEvent } from "@/lib/server/operations/operation-feed";
 
 export const runtime = "nodejs";
 
@@ -23,7 +25,57 @@ function cleanError(error: string, message: string, status = 400) {
   return NextResponse.json({ ok: false, error, message }, { status });
 }
 
-function testResult(channelType: ManagedChannelType, status: ChannelTestStatus, message: string) {
+function channelName(channelType: ManagedChannelType) {
+  if (channelType === "instagram") return "Instagram";
+  if (channelType === "whatsapp") return "WhatsApp";
+  return "Web Chat";
+}
+
+async function recordChannelTest(
+  hotelId: string,
+  channelType: ManagedChannelType,
+  status: ChannelTestStatus
+) {
+  await updateChannelHealthFromEvent({
+    hotelId,
+    channelType,
+    tested: true,
+    status: status === "success" ? "active" : status === "error" ? "error" : "pending",
+    incrementMessageCount: false,
+    lastError: status === "error" ? "Bağlantı testi tamamlanamadı." : null,
+  });
+  await recordOperationFeedEvent({
+    hotelId,
+    channel: channelType,
+    eventType:
+      status === "success"
+        ? "connection_test_success"
+        : status === "error"
+          ? "delivery_failed"
+          : "channel_pending",
+    title:
+      status === "success"
+        ? "Bağlantı testi başarılı"
+        : status === "error"
+          ? "Teslimat hatası"
+          : "Kanal bağlantısı beklemede",
+    description:
+      status === "success"
+        ? `${channelName(channelType)} bağlantı testi başarılı.`
+        : status === "error"
+          ? `${channelName(channelType)} bağlantı testi tamamlanamadı.`
+          : `${channelName(channelType)} bağlantısı beklemede.`,
+    severity: status === "success" ? "success" : status === "error" ? "error" : "warning",
+  });
+}
+
+async function testResult(
+  hotelId: string,
+  channelType: ManagedChannelType,
+  status: ChannelTestStatus,
+  message: string
+) {
+  await recordChannelTest(hotelId, channelType, status);
   return NextResponse.json({
     ok: true,
     result: {
@@ -86,42 +138,43 @@ export async function POST(req: Request) {
   const channelType = parsed.data.channelType;
 
   if (channelType === "web_chat") {
-    return testResult(channelType, "success", "Web Chat aktif.");
+    return testResult(hotelId, channelType, "success", "Web Chat aktif.");
   }
 
   if (channelType === "whatsapp") {
-    return testResult(channelType, "pending", "WhatsApp bağlantısı beklemede veya test yapılandırması eksik.");
+    return testResult(hotelId, channelType, "pending", "WhatsApp bağlantısı beklemede veya test yapılandırması eksik.");
   }
 
   if (process.env.NODE_ENV !== "production" && hotelId === MANYCHAT_LOCAL_TEST_HOTEL_ID) {
     try {
       const ok = await runLocalInstagramTest(req);
       return testResult(
+        hotelId,
         channelType,
         ok ? "success" : "error",
         ok ? "Instagram test mesajı yerel akışa iletildi." : "Instagram yerel test akışı başarısız oldu."
       );
     } catch {
-      return testResult(channelType, "error", "Instagram yerel test akışı çalıştırılamadı.");
+      return testResult(hotelId, channelType, "error", "Instagram yerel test akışı çalıştırılamadı.");
     }
   }
 
   try {
     const config = await getConnectedChannel(hotelId, channelType);
     if (!config) {
-      return testResult(channelType, "pending", "Instagram bağlantısı için kayıt bulunamadı.");
+      return testResult(hotelId, channelType, "pending", "Instagram bağlantısı için kayıt bulunamadı.");
     }
 
     if (config.status === "error") {
-      return testResult(channelType, "error", config.lastError ?? "Instagram bağlantısında hata var.");
+      return testResult(hotelId, channelType, "error", config.lastError ?? "Instagram bağlantısında hata var.");
     }
 
     if (config.inboundSecret && config.status === "active") {
-      return testResult(channelType, "success", "Instagram webhook yapılandırması hazır.");
+      return testResult(hotelId, channelType, "success", "Instagram bağlantısı hazır.");
     }
 
-    return testResult(channelType, "pending", "Instagram bağlantısı beklemede veya gizli anahtar eksik.");
+    return testResult(hotelId, channelType, "pending", "Instagram bağlantısı beklemede veya gizli anahtar eksik.");
   } catch {
-    return testResult(channelType, "pending", "Instagram bağlantısı şu anda test edilemedi.");
+    return testResult(hotelId, channelType, "pending", "Instagram bağlantısı şu anda test edilemedi.");
   }
 }

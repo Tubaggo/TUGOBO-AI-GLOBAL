@@ -327,6 +327,16 @@ const DEMO_GUESTS: DemoGuest[] = [
 // ─── Toast type ───────────────────────────────────────────────────────────────
 
 type ToastData = { title: string; sub?: string; type: "success" | "new" };
+type OperationFeedItem = {
+  id: string;
+  channel: "web_chat" | "instagram" | "whatsapp";
+  event_type: string;
+  title: string;
+  description: string;
+  timestamp: string;
+  severity: "info" | "success" | "warning" | "error";
+  conversation_id?: string;
+};
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -370,6 +380,7 @@ export default function ConversationsPage() {
   const [sentLink, setSentLink] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [toast, setToast] = useState<ToastData | null>(null);
+  const [operationFeed, setOperationFeed] = useState<OperationFeedItem[]>([]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -429,6 +440,43 @@ export default function ConversationsPage() {
     : undefined;
 
   const selectedReservationStatus = effectiveReservation?.status;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOperationFeed() {
+      if (!isLivePanel && !selectedOperation) {
+        setOperationFeed([]);
+        return;
+      }
+
+      try {
+        const params = new URLSearchParams({ limit: "3" });
+        if (isLiveConversationId(selected) || selected.startsWith("demo-manychat-")) {
+          params.set("conversation_id", selected);
+        }
+        const res = await fetch(`/api/operations/feed?${params.toString()}`);
+        const data = (await res.json().catch(() => null)) as {
+          ok?: boolean;
+          events?: OperationFeedItem[];
+        } | null;
+
+        if (!cancelled) {
+          setOperationFeed(data?.ok && Array.isArray(data.events) ? data.events : []);
+        }
+      } catch {
+        if (!cancelled) setOperationFeed([]);
+      }
+    }
+
+    void loadOperationFeed();
+    const interval = window.setInterval(loadOperationFeed, 6000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [isLivePanel, selected, selectedOperation]);
 
   // Pre-compute confirmed metrics for MetricsBar (includes demo revenue via localReservations)
   const confirmedCount = Object.values(confirmedReservations).filter(Boolean).length;
@@ -1421,6 +1469,7 @@ export default function ConversationsPage() {
                 })
               : undefined
           }
+          operationFeed={operationFeed}
         />
         </div>
       ) : null}
@@ -2078,6 +2127,7 @@ function GuestSidebar({
   operationBookingValue,
   operationSuggestedAction,
   operationLastActivity,
+  operationFeed,
 }: {
   conv: Conversation;
   thread: ChatThread;
@@ -2102,6 +2152,7 @@ function GuestSidebar({
   operationBookingValue?: number;
   operationSuggestedAction?: string;
   operationLastActivity?: string;
+  operationFeed?: OperationFeedItem[];
 }) {
   const t = useTranslations("conversations");
   const tCommon = useTranslations("common");
@@ -2282,6 +2333,10 @@ function GuestSidebar({
         </div>
       </div>
 
+      {operationFeed?.length ? (
+        <OperationFeedPanel events={operationFeed} />
+      ) : null}
+
       {/* AI Context */}
       <div className="px-5 py-6 pb-8">
         <SidebarLabel>{t("guestSummary")}</SidebarLabel>
@@ -2403,6 +2458,73 @@ function GuestSidebar({
 }
 
 // ─── SidebarLabel ─────────────────────────────────────────────────────────────
+
+function OperationFeedPanel({ events }: { events: OperationFeedItem[] }) {
+  return (
+    <div className="border-b border-white/[0.03] px-5 py-6">
+      <SidebarLabel>Son operasyon hareketleri</SidebarLabel>
+      <div className="space-y-2.5">
+        {events.slice(0, 3).map((event) => {
+          const view = operationFeedView(event.severity);
+          return (
+            <div key={event.id} className={cn("rounded-lg border px-3 py-2.5", view.className)}>
+              <div className="flex items-start gap-2.5">
+                <view.icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", view.iconClass)} />
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold leading-snug text-white/82">{event.title}</p>
+                  <p className="mt-0.5 text-[10px] leading-relaxed text-white/40">{event.description}</p>
+                  <p className="mt-1 text-[10px] text-white/24">{formatOperationEventTime(event.timestamp)}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function operationFeedView(severity: OperationFeedItem["severity"]) {
+  if (severity === "success") {
+    return {
+      icon: CheckCircle2,
+      iconClass: "text-emerald-300/80",
+      className: "border-emerald-500/14 bg-emerald-500/[0.04]",
+    };
+  }
+
+  if (severity === "warning") {
+    return {
+      icon: AlertTriangle,
+      iconClass: "text-amber-300/80",
+      className: "border-amber-500/16 bg-amber-500/[0.045]",
+    };
+  }
+
+  if (severity === "error") {
+    return {
+      icon: AlertCircle,
+      iconClass: "text-red-300/80",
+      className: "border-red-500/16 bg-red-500/[0.045]",
+    };
+  }
+
+  return {
+    icon: MessageSquare,
+    iconClass: "text-blue-300/80",
+    className: "border-blue-500/14 bg-blue-500/[0.04]",
+  };
+}
+
+function formatOperationEventTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "az önce";
+
+  return new Intl.DateTimeFormat("tr-TR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
 
 function SidebarLabel({ children }: { children: React.ReactNode }) {
   return (

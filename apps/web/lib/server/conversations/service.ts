@@ -19,7 +19,8 @@ import type { TakeoverAction } from "@/lib/conversation/models";
 import { generateHotelAssistantResponse } from "@/lib/ai/aiClient";
 import type { AiRespondRequest } from "@/lib/ai/types";
 import { sendManychatOutboundMessage } from "@/lib/server/integrations/manychat-outbound";
-import { validateChannelSecret } from "@/lib/server/channels/service";
+import { updateChannelHealthFromEvent, validateChannelSecret } from "@/lib/server/channels/service";
+import { recordOperationFeedEvent } from "@/lib/server/operations/operation-feed";
 
 type ConversationRow = {
   conversation: typeof conversations.$inferSelect;
@@ -376,11 +377,21 @@ export async function ingestGuestMessage(
     })
     .where(eq(conversations.id, conversationId));
 
-  await database.insert(operationalEvents).values({
+  await updateChannelHealthFromEvent({
     hotelId: params.hotelId,
+    channelType: params.channel === "manual" ? "web_chat" : params.channel,
+    direction: "inbound",
+    status: "active",
+    lastError: null,
+  });
+  await recordOperationFeedEvent({
+    hotelId: params.hotelId,
+    channel: params.channel === "manual" ? "web_chat" : params.channel,
     conversationId,
-    kind: "message_received",
-    label: "Talep geldi",
+    eventType: "guest_request_received",
+    title: "Misafir talebi alındı",
+    description: "Yeni misafir talebi alındı.",
+    severity: "info",
   });
 
   return { conversationId, messageId: msg.id };
@@ -503,6 +514,14 @@ export async function ingestManychatMessage(
     },
   ]);
 
+  await updateChannelHealthFromEvent({
+    hotelId: params.hotelId,
+    channelType: params.channel,
+    direction: "inbound",
+    status: "active",
+    lastError: null,
+  });
+
   logger.info("Manychat inbound message ingested", {
     hotelId: params.hotelId,
     conversationId,
@@ -606,6 +625,23 @@ export async function sendOperatorMessage(
     .where(eq(conversations.id, conversationId));
 
   if (!isManychatOutbound) {
+    const channelType = conv.channel === "manual" ? "web_chat" : conv.channel;
+    await updateChannelHealthFromEvent({
+      hotelId: conv.hotelId,
+      channelType,
+      direction: "outbound",
+      status: "active",
+      lastError: null,
+    });
+    await recordOperationFeedEvent({
+      hotelId: conv.hotelId,
+      conversationId,
+      channel: channelType,
+      eventType: "operator_replied",
+      title: "Operatör yanıtladı",
+      description: "Operatör misafire yanıt gönderdi.",
+      severity: "success",
+    });
     return dbMessageToLive(msg);
   }
 
@@ -627,6 +663,24 @@ export async function sendOperatorMessage(
       .where(eq(messages.id, msg.id))
       .returning();
 
+    await updateChannelHealthFromEvent({
+      hotelId: conv.hotelId,
+      channelType: manychatChannel,
+      direction: "outbound",
+      status: "error",
+      deliveryFailed: true,
+      lastError: "Teslimat hatası",
+    });
+    await recordOperationFeedEvent({
+      hotelId: conv.hotelId,
+      conversationId,
+      channel: manychatChannel,
+      eventType: "delivery_failed",
+      title: "Teslimat hatası",
+      description: "Misafire yanıt teslim edilemedi.",
+      severity: "error",
+    });
+
     return dbMessageToLive(failedMessage ?? msg);
   }
 
@@ -647,6 +701,27 @@ export async function sendOperatorMessage(
     })
     .where(eq(messages.id, msg.id))
     .returning();
+
+  await updateChannelHealthFromEvent({
+    hotelId: conv.hotelId,
+    channelType: manychatChannel,
+    direction: "outbound",
+    status: delivery.deliveryStatus === "failed" ? "error" : "active",
+    deliveryFailed: delivery.deliveryStatus === "failed",
+    lastError: delivery.deliveryStatus === "failed" ? "Teslimat hatası" : null,
+  });
+  await recordOperationFeedEvent({
+    hotelId: conv.hotelId,
+    conversationId,
+    channel: manychatChannel,
+    eventType: delivery.deliveryStatus === "failed" ? "delivery_failed" : "operator_replied",
+    title: delivery.deliveryStatus === "failed" ? "Teslimat hatası" : "Operatör yanıtladı",
+    description:
+      delivery.deliveryStatus === "failed"
+        ? "Misafire yanıt teslim edilemedi."
+        : "Operatör misafire yanıt gönderdi.",
+    severity: delivery.deliveryStatus === "failed" ? "error" : "success",
+  });
 
   return dbMessageToLive(updatedMessage ?? msg);
 }
@@ -749,6 +824,16 @@ export async function runAiReplyForConversation(
       status: result.ok && result.data.requiresHuman ? "human_takeover" : "ai_active",
     })
     .where(eq(conversations.id, conversationId));
+
+  await recordOperationFeedEvent({
+    hotelId: row.conversation.hotelId,
+    conversationId,
+    channel: row.conversation.channel === "manual" ? "web_chat" : row.conversation.channel,
+    eventType: "ai_support_prepared",
+    title: "AI destek hazırlandı",
+    description: "AI destek hazır.",
+    severity: "success",
+  });
 
   if (result.ok && result.data.requiresHuman) {
     await database.insert(operationalEvents).values({

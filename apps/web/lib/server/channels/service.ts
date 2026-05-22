@@ -1,4 +1,6 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import {
   and,
   channels,
@@ -23,6 +25,33 @@ import { resolvePilotHotelId } from "@/lib/server/pilot-hotel";
 
 export type ManagedChannelType = Extract<ConnectedChannelType, "web_chat" | "instagram" | "whatsapp">;
 export type ChannelHealthStatus = "active" | "pending" | "disabled" | "error";
+export type OperationalChannelHealthStatus = ChannelHealthStatus | "degraded";
+
+export type ChannelOperationalHealth = {
+  channelType: ManagedChannelType;
+  status: OperationalChannelHealthStatus;
+  lastInboundAt: string | null;
+  lastOutboundAt: string | null;
+  lastTestAt: string | null;
+  lastError: string | null;
+  messageCountToday: number;
+  failedDeliveriesToday: number;
+};
+
+type ChannelHealthSnapshot = Omit<ChannelOperationalHealth, "channelType"> & {
+  countDate: string;
+};
+
+type ChannelHealthEventInput = {
+  hotelId: string;
+  channelType: ManagedChannelType;
+  direction?: "inbound" | "outbound";
+  tested?: boolean;
+  status?: OperationalChannelHealthStatus;
+  deliveryFailed?: boolean;
+  incrementMessageCount?: boolean;
+  lastError?: string | null;
+};
 
 export type ConnectedChannelDisplay = {
   channelType: ManagedChannelType;
@@ -88,6 +117,8 @@ type RotateChannelSecretInput = {
 };
 
 const MANAGED_CHANNELS: ManagedChannelType[] = ["web_chat", "instagram", "whatsapp"];
+const LOCAL_HEALTH_GLOBAL_KEY = "__tugobo_channel_health__";
+const LOCAL_HEALTH_HYDRATED_GLOBAL_KEY = "__tugobo_channel_health_hydrated__";
 
 function assertDb(): DB {
   if (!db) throw new Error("database_not_configured");
@@ -145,6 +176,161 @@ function metadataRecord(input: unknown): Record<string, unknown> {
   return input && typeof input === "object" && !Array.isArray(input)
     ? (input as Record<string, unknown>)
     : {};
+}
+
+function todayKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function localHealthPath(): string {
+  return path.join(process.cwd(), ".tugobo-dev", "channel-health.json");
+}
+
+function isHealthSnapshot(input: unknown): input is ChannelHealthSnapshot {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return false;
+  const candidate = input as Partial<ChannelHealthSnapshot>;
+  return (
+    (candidate.status === "active" ||
+      candidate.status === "pending" ||
+      candidate.status === "degraded" ||
+      candidate.status === "error" ||
+      candidate.status === "disabled") &&
+    typeof candidate.messageCountToday === "number" &&
+    typeof candidate.failedDeliveriesToday === "number" &&
+    typeof candidate.countDate === "string"
+  );
+}
+
+function defaultHealth(status: OperationalChannelHealthStatus = "pending"): ChannelHealthSnapshot {
+  return {
+    status,
+    lastInboundAt: null,
+    lastOutboundAt: null,
+    lastTestAt: null,
+    lastError: null,
+    messageCountToday: 0,
+    failedDeliveriesToday: 0,
+    countDate: todayKey(),
+  };
+}
+
+function normalizeHealthDay(snapshot: ChannelHealthSnapshot): ChannelHealthSnapshot {
+  if (snapshot.countDate === todayKey()) return snapshot;
+  return {
+    ...snapshot,
+    countDate: todayKey(),
+    messageCountToday: 0,
+    failedDeliveriesToday: 0,
+  };
+}
+
+function healthFromMetadata(
+  metadata: Record<string, unknown>,
+  fallbackStatus: OperationalChannelHealthStatus
+): ChannelHealthSnapshot {
+  const health = metadata.channelHealth;
+  if (isHealthSnapshot(health)) {
+    return normalizeHealthDay(health);
+  }
+
+  return defaultHealth(fallbackStatus);
+}
+
+type LocalHealthGlobal = typeof globalThis & {
+  [LOCAL_HEALTH_GLOBAL_KEY]?: Record<string, ChannelHealthSnapshot>;
+  [LOCAL_HEALTH_HYDRATED_GLOBAL_KEY]?: boolean;
+};
+
+function readLocalHealth(): Record<string, ChannelHealthSnapshot> {
+  if (process.env.NODE_ENV === "production") return {};
+
+  try {
+    const parsed = JSON.parse(readFileSync(localHealthPath(), "utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+
+    const result: Record<string, ChannelHealthSnapshot> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (isHealthSnapshot(value)) {
+        result[key] = normalizeHealthDay(value);
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalHealth(store: Record<string, ChannelHealthSnapshot>) {
+  if (process.env.NODE_ENV === "production") return;
+
+  try {
+    const filePath = localHealthPath();
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    writeFileSync(filePath, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+  } catch {
+    // Local health state must never block channel operations.
+  }
+}
+
+function localHealthStore(): Record<string, ChannelHealthSnapshot> {
+  const scoped = globalThis as LocalHealthGlobal;
+
+  if (!scoped[LOCAL_HEALTH_GLOBAL_KEY]) {
+    scoped[LOCAL_HEALTH_GLOBAL_KEY] = {};
+  }
+
+  if (!scoped[LOCAL_HEALTH_HYDRATED_GLOBAL_KEY]) {
+    scoped[LOCAL_HEALTH_GLOBAL_KEY] = readLocalHealth();
+    scoped[LOCAL_HEALTH_HYDRATED_GLOBAL_KEY] = true;
+  }
+
+  return scoped[LOCAL_HEALTH_GLOBAL_KEY];
+}
+
+function localHealthKey(hotelId: string, channelType: ManagedChannelType): string {
+  return `${hotelId}:${channelType}`;
+}
+
+function safeOperationalError(error: string | null | undefined): string | null {
+  if (!error) return null;
+  const trimmed = error.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, 180) : null;
+}
+
+function applyHealthEvent(
+  current: ChannelHealthSnapshot,
+  input: ChannelHealthEventInput
+): ChannelHealthSnapshot {
+  const now = new Date().toISOString();
+  const next = normalizeHealthDay(current);
+  const failedDeliveriesToday = next.failedDeliveriesToday + (input.deliveryFailed ? 1 : 0);
+  const status =
+    input.status ??
+    (input.deliveryFailed
+      ? "error"
+      : next.status === "pending"
+        ? "active"
+        : next.status);
+
+  return {
+    ...next,
+    status,
+    lastInboundAt: input.direction === "inbound" ? now : next.lastInboundAt,
+    lastOutboundAt: input.direction === "outbound" ? now : next.lastOutboundAt,
+    lastTestAt: input.tested ? now : next.lastTestAt,
+    lastError: input.deliveryFailed || input.status === "error" || input.status === "degraded"
+      ? safeOperationalError(input.lastError) ?? next.lastError
+      : input.lastError === null
+        ? null
+        : next.lastError,
+    messageCountToday:
+      input.incrementMessageCount === false
+        ? next.messageCountToday
+        : input.direction
+          ? next.messageCountToday + 1
+          : next.messageCountToday,
+    failedDeliveriesToday,
+  };
 }
 
 function stringValue(input: unknown): string | undefined {
@@ -362,6 +548,133 @@ export async function listConnectedChannels(hotelId: string, origin?: string): P
     const row = rows.find((candidate) => candidate.channelType === channelType) ?? null;
     return toDisplay(toServerConfig(row, hotelId, channelType), origin);
   });
+}
+
+export async function listChannelHealth(hotelId: string, origin?: string): Promise<ChannelOperationalHealth[]> {
+  const displays = await listConnectedChannels(hotelId, origin);
+
+  if (process.env.NODE_ENV !== "production" && hotelId === MANYCHAT_LOCAL_TEST_HOTEL_ID) {
+    const store = localHealthStore();
+    return displays.map((channel) => {
+      const key = localHealthKey(hotelId, channel.channelType);
+      const snapshot = normalizeHealthDay(
+        store[key] ?? defaultHealth(channel.status === "disabled" ? "disabled" : channel.status)
+      );
+      store[key] = snapshot;
+
+      return {
+        channelType: channel.channelType,
+        status: snapshot.status,
+        lastInboundAt: snapshot.lastInboundAt,
+        lastOutboundAt: snapshot.lastOutboundAt,
+        lastTestAt: snapshot.lastTestAt,
+        lastError: snapshot.lastError,
+        messageCountToday: snapshot.messageCountToday,
+        failedDeliveriesToday: snapshot.failedDeliveriesToday,
+      };
+    });
+  }
+
+  if (!db) {
+    return displays.map((channel) => {
+      const snapshot = defaultHealth(channel.status === "disabled" ? "disabled" : channel.status);
+      return {
+        channelType: channel.channelType,
+        status: snapshot.status,
+        lastInboundAt: snapshot.lastInboundAt,
+        lastOutboundAt: snapshot.lastOutboundAt,
+        lastTestAt: snapshot.lastTestAt,
+        lastError: snapshot.lastError,
+        messageCountToday: snapshot.messageCountToday,
+        failedDeliveriesToday: snapshot.failedDeliveriesToday,
+      };
+    });
+  }
+
+  const rows = await db
+    .select({
+      channelType: channels.channelType,
+      status: channels.status,
+      metadata: channels.metadata,
+      lastError: channels.lastError,
+    })
+    .from(channels)
+    .where(and(eq(channels.hotelId, hotelId), inArray(channels.channelType, MANAGED_CHANNELS)))
+    .orderBy(desc(channels.createdAt));
+
+  return displays.map((channel) => {
+    const row = rows.find((candidate) => candidate.channelType === channel.channelType);
+    const metadata = metadataRecord(row?.metadata);
+    const snapshot = healthFromMetadata(
+      metadata,
+      row ? normalizeChannelStatus(row.status) : channel.status
+    );
+
+    return {
+      channelType: channel.channelType,
+      status: snapshot.status,
+      lastInboundAt: snapshot.lastInboundAt,
+      lastOutboundAt: snapshot.lastOutboundAt,
+      lastTestAt: snapshot.lastTestAt,
+      lastError: snapshot.lastError ?? (snapshot.status === "error" ? row?.lastError ?? null : null),
+      messageCountToday: snapshot.messageCountToday,
+      failedDeliveriesToday: snapshot.failedDeliveriesToday,
+    };
+  });
+}
+
+export async function updateChannelHealthFromEvent(input: ChannelHealthEventInput): Promise<void> {
+  if (process.env.NODE_ENV !== "production" && input.hotelId === MANYCHAT_LOCAL_TEST_HOTEL_ID) {
+    const store = localHealthStore();
+    const key = localHealthKey(input.hotelId, input.channelType);
+    store[key] = applyHealthEvent(store[key] ?? defaultHealth("pending"), input);
+    writeLocalHealth(store);
+    return;
+  }
+
+  if (!db) return;
+
+  try {
+    const [row] = await db
+      .select({
+        id: channels.id,
+        metadata: channels.metadata,
+        status: channels.status,
+      })
+      .from(channels)
+      .where(and(eq(channels.hotelId, input.hotelId), eq(channels.channelType, input.channelType)))
+      .orderBy(desc(channels.createdAt))
+      .limit(1);
+
+    if (!row?.id) return;
+
+    const metadata = metadataRecord(row.metadata);
+    const nextHealth = applyHealthEvent(
+      healthFromMetadata(metadata, normalizeChannelStatus(row.status)),
+      input
+    );
+    const nextChannelStatus =
+      nextHealth.status === "degraded" ? normalizeChannelStatus(row.status) : nextHealth.status;
+    const nextLastError =
+      nextHealth.status === "error" || nextHealth.status === "degraded"
+        ? nextHealth.lastError
+        : null;
+
+    await db
+      .update(channels)
+      .set({
+        status: nextChannelStatus,
+        lastConnectedAt: nextChannelStatus === "active" ? new Date() : undefined,
+        lastError: nextLastError,
+        metadata: {
+          ...metadata,
+          channelHealth: nextHealth,
+        },
+      })
+      .where(eq(channels.id, row.id));
+  } catch {
+    // Health writes are best-effort and must not interrupt guest messaging.
+  }
 }
 
 export async function rotateChannelSecret(input: RotateChannelSecretInput): Promise<{
