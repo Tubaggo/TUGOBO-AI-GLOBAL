@@ -30,6 +30,15 @@ export type ConversationPaymentState =
   | "failed"
   | "completed";
 
+export type ReservationPaymentState =
+  | "not_started"
+  | "payment_link_sent"
+  | "payment_pending"
+  | "paid"
+  | "failed"
+  | "expired"
+  | "refunded";
+
 export type ReservationLifecycleState =
   | "inquiry_received"
   | "quote_prepared"

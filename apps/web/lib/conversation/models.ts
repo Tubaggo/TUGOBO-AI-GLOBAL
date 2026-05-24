@@ -8,6 +8,7 @@ import type {
   ReservationLifecycleActor,
   ReservationLifecycleSeverity,
   ReservationLifecycleState,
+  ReservationPaymentState,
 } from "@tugobo/shared";
 import type { ConversationStage, MessageSender } from "@/lib/channels/types";
 
@@ -35,6 +36,7 @@ export type LiveConversation = {
   bookingValue?: number;
   reservation?: LiveReservationSummary;
   latestLifecycleEvent?: ReservationLifecycleEvent;
+  latestPaymentEvent?: ReservationPaymentEvent;
   aiSuggestion?: ReservationAiSuggestion;
   requiresHuman: boolean;
   operatorJoinedAt?: string;
@@ -51,6 +53,20 @@ export type ReservationLifecycleEvent = {
   timestamp: string;
   actor: ReservationLifecycleActor;
   severity: ReservationLifecycleSeverity;
+};
+
+export type ReservationPaymentEvent = {
+  id: string;
+  hotel_id: string;
+  conversation_id: string;
+  reservation_id?: string;
+  amount?: number;
+  currency?: string;
+  state: ReservationPaymentState;
+  title: string;
+  description: string;
+  timestamp: string;
+  actor: ReservationLifecycleActor;
 };
 
 export type ReservationAiSuggestion = {

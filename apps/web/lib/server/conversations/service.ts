@@ -28,6 +28,7 @@ import {
   hasReservationIntent,
   recordReservationLifecycleEvent,
 } from "@/lib/server/reservations/lifecycle";
+import { getLatestPaymentEvent } from "@/lib/server/payments/payment-runtime";
 
 type ConversationRow = {
   conversation: typeof conversations.$inferSelect;
@@ -268,6 +269,10 @@ export async function listLiveConversations(hotelId: string): Promise<LiveConver
       hotelId,
       conversationId: row.conversation.id,
     });
+    const latestPaymentEvent = await getLatestPaymentEvent({
+      hotelId,
+      conversationId: row.conversation.id,
+    });
     const reservation = await getReservationSummaryForConversation({
       hotelId,
       conversationId: row.conversation.id,
@@ -276,6 +281,7 @@ export async function listLiveConversations(hotelId: string): Promise<LiveConver
     result.push({
       ...dbConversationToLive(row.conversation, row.contact, lastMsg?.content),
       latestLifecycleEvent,
+      latestPaymentEvent,
       reservation,
       aiSuggestion: aiSuggestionFromLifecycleEvent(latestLifecycleEvent),
     });

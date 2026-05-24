@@ -65,6 +65,7 @@ export function liveConversationToOperation(
     paymentState: live.paymentState,
     reservation: live.reservation,
     latestLifecycleEvent: live.latestLifecycleEvent,
+    latestPaymentEvent: live.latestPaymentEvent,
     aiSuggestion: live.aiSuggestion,
     messages: messages.map(liveMessageToOperation),
     externalId: live.externalSessionId,

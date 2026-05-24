@@ -346,6 +346,8 @@ type OperationFeedItem = {
 
 type ReservationLifecycleActionState =
   NonNullable<OperationConversation["latestLifecycleEvent"]>["state"];
+type ReservationPaymentActionState =
+  NonNullable<OperationConversation["latestPaymentEvent"]>["state"];
 
 type ReservationLifecycleAction = {
   state: ReservationLifecycleActionState;
@@ -353,6 +355,34 @@ type ReservationLifecycleAction = {
   description: string;
   severity: OperationFeedItem["severity"];
   icon: React.ElementType;
+};
+
+type PaymentActionSpec = {
+  state: ReservationPaymentActionState;
+  title: string;
+  description: string;
+  suggestion: string;
+};
+
+const PAYMENT_ACTIONS: Partial<Record<ReservationLifecycleActionState, PaymentActionSpec>> = {
+  payment_link_sent: {
+    state: "payment_link_sent",
+    title: "Ödeme bağlantısı gönderildi",
+    description: "Misafire ödeme bağlantısı gönderildi.",
+    suggestion: "Ödeme bağlantısı gönderildi. Misafire ödeme adımını takip edeceğimi bildirin.",
+  },
+  payment_pending: {
+    state: "payment_pending",
+    title: "Ödeme bekleniyor",
+    description: "Misafirden ödeme bekleniyor.",
+    suggestion: "Ödeme bekleniyor. 15 dakika içinde hatırlatma önerilir.",
+  },
+  confirmed: {
+    state: "paid",
+    title: "Rezervasyon onaylandı",
+    description: "Ödeme alındı ve rezervasyon onaylandı.",
+    suggestion: "Rezervasyon onaylandı. Misafire onay ve giriş bilgileri gönderilebilir.",
+  },
 };
 
 const RESERVATION_LIFECYCLE_ACTIONS: ReservationLifecycleAction[] = [
@@ -436,6 +466,9 @@ export default function ConversationsPage() {
   const [localLifecycleEvents, setLocalLifecycleEvents] = useState<
     Record<string, OperationConversation["latestLifecycleEvent"]>
   >({});
+  const [localPaymentEvents, setLocalPaymentEvents] = useState<
+    Record<string, OperationConversation["latestPaymentEvent"]>
+  >({});
   const [pendingLifecycleAction, setPendingLifecycleAction] =
     useState<ReservationLifecycleActionState | null>(null);
   const [localUnreads, setLocalUnreads] = useState<Record<string, number>>(
@@ -457,6 +490,7 @@ export default function ConversationsPage() {
   const demoTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const demoRoundRef = useRef(0);
   const lifecycleHydratedKeysRef = useRef<Record<string, string>>({});
+  const paymentHydratedKeysRef = useRef<Record<string, string>>({});
 
   const [opsPhase, setOpsPhase] = useState<OpsPhase>("triage");
   const [opsPulseAt, setOpsPulseAt] = useState<number>(() => Date.now());
@@ -515,7 +549,10 @@ export default function ConversationsPage() {
     localLeadStatuses[selected] ?? selectedConv?.leadStatus;
   const selectedLifecycleEvent =
     selectedOperation?.latestLifecycleEvent ?? localLifecycleEvents[selected];
+  const selectedPaymentEvent =
+    selectedOperation?.latestPaymentEvent ?? localPaymentEvents[selected];
   const selectedAiSuggestion =
+    (selectedPaymentEvent ? paymentSuggestion(selectedPaymentEvent.state) : undefined) ??
     selectedOperation?.aiSuggestion ??
     (selectedLifecycleEvent ? lifecycleSuggestion(selectedLifecycleEvent.state) : undefined);
   const selectedConversationForPanel = selectedConv
@@ -584,6 +621,19 @@ export default function ConversationsPage() {
             applyLocalLifecycleProjection(selected, latestLifecycleEvent);
             applyOperationLifecycleProjection(selected, latestLifecycleEvent);
           }
+
+          const paymentRes = await fetch(
+            `/api/conversations/${selected}/payment?${lifecycleParams.toString()}`
+          );
+          const paymentData = (await paymentRes.json().catch(() => null)) as {
+            ok?: boolean;
+            events?: NonNullable<OperationConversation["latestPaymentEvent"]>[];
+          } | null;
+          const latestPaymentEvent = paymentData?.events?.[0];
+
+          if (!cancelled && latestPaymentEvent) {
+            applyPaymentProjection(selected, latestPaymentEvent);
+          }
         }
       } catch {
         if (!cancelled) setOperationFeed([]);
@@ -597,6 +647,7 @@ export default function ConversationsPage() {
       cancelled = true;
       window.clearInterval(interval);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- projection helpers intentionally use this selected snapshot.
   }, [isLivePanel, selected, selectedOperation]);
 
   useEffect(() => {
@@ -638,6 +689,38 @@ export default function ConversationsPage() {
           }
         })
       );
+
+      await Promise.all(
+        lifecycleHydrationTargets.map(async (target) => {
+          const hydrationKey = `${target.hotelId}:${target.id}`;
+          if (paymentHydratedKeysRef.current[hydrationKey]) return;
+
+          try {
+            const params = new URLSearchParams({ hotel_id: target.hotelId });
+            const response = await fetch(
+              `/api/conversations/${target.id}/payment?${params.toString()}`
+            );
+            const data = (await response.json().catch(() => null)) as {
+              ok?: boolean;
+              events?: NonNullable<OperationConversation["latestPaymentEvent"]>[];
+            } | null;
+
+            if (cancelled) return;
+
+            const latestPaymentEvent = data?.events?.[0];
+            paymentHydratedKeysRef.current[hydrationKey] =
+              latestPaymentEvent?.id ?? "none";
+
+            if (!latestPaymentEvent) return;
+
+            applyPaymentProjection(target.id, latestPaymentEvent);
+          } catch {
+            if (!cancelled) {
+              paymentHydratedKeysRef.current[hydrationKey] = "failed";
+            }
+          }
+        })
+      );
     }
 
     void hydratePersistedLifecycle();
@@ -645,6 +728,7 @@ export default function ConversationsPage() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- projection helpers intentionally use this hydration snapshot.
   }, [allConversationIds, isLivePanel, lifecycleHydrationTargets, opPanel.rawConversations.length]);
 
   // Pre-compute confirmed metrics for MetricsBar (includes demo revenue via localReservations)
@@ -788,6 +872,73 @@ export default function ConversationsPage() {
                             : event.state === "quote_sent" || event.state === "quote_prepared"
                               ? "quoted"
                               : conversation.reservation.status,
+                  }
+                : conversation.reservation,
+            }
+          : conversation
+      ),
+    }));
+  }
+
+  function reservationStatusForPayment(
+    state: ReservationPaymentActionState
+  ): OperationReservationSummary["status"] | undefined {
+    if (state === "payment_link_sent" || state === "payment_pending") return "pending_payment";
+    if (state === "paid") return "confirmed";
+    if (state === "expired" || state === "refunded") return "cancelled";
+    return undefined;
+  }
+
+  function conversationPaymentStateForPayment(
+    state: ReservationPaymentActionState
+  ): OperationConversation["paymentState"] {
+    if (state === "paid") return "completed";
+    if (state === "failed") return "failed";
+    if (state === "payment_link_sent" || state === "payment_pending") return "pending";
+    return "none";
+  }
+
+  function applyPaymentProjection(
+    conversationId: string,
+    event: NonNullable<OperationConversation["latestPaymentEvent"]>
+  ) {
+    setLocalPaymentEvents((prev) => ({ ...prev, [conversationId]: event }));
+
+    const nextReservationStatus = reservationStatusForPayment(event.state);
+    const existingReservation =
+      localReservations[conversationId] ??
+      CHAT_THREADS[conversationId]?.reservation ??
+      demoChatThreads[conversationId]?.reservation;
+
+    if (nextReservationStatus && existingReservation) {
+      setLocalReservations((prev) => ({
+        ...prev,
+        [conversationId]: {
+          ...(prev[conversationId] ?? existingReservation),
+          status: nextReservationStatus,
+        },
+      }));
+      setConfirmedReservations((prev) => ({
+        ...prev,
+        [conversationId]: nextReservationStatus === "confirmed",
+      }));
+    }
+
+    useOperationConversationStore.setState((state) => ({
+      conversations: state.conversations.map((conversation) =>
+        conversation.id === conversationId
+          ? {
+              ...conversation,
+              latestPaymentEvent: event,
+              paymentState: conversationPaymentStateForPayment(event.state),
+              aiSuggestion: paymentSuggestion(event.state),
+              bookingValue: event.amount ?? conversation.bookingValue,
+              reservation: conversation.reservation
+                ? {
+                    ...conversation.reservation,
+                    totalAmount: event.amount ?? conversation.reservation.totalAmount,
+                    currency: event.currency ?? conversation.reservation.currency,
+                    status: nextReservationStatus ?? conversation.reservation.status,
                   }
                 : conversation.reservation,
             }
@@ -1193,10 +1344,73 @@ export default function ConversationsPage() {
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
+  async function persistPaymentAction(
+    paymentAction: PaymentActionSpec,
+    amount?: number,
+    currency?: string
+  ) {
+    const paymentResponse = await fetch(`/api/conversations/${selected}/payment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        hotel_id: selectedOperation?.hotelId ?? "demo-hotel",
+        reservation_id: selectedOperation?.reservation?.id,
+        amount,
+        currency,
+        state: paymentAction.state,
+        actor: "operator",
+        title: paymentAction.title,
+        description: paymentAction.description,
+      }),
+    });
+    const paymentData = (await paymentResponse.json().catch(() => null)) as {
+      ok?: boolean;
+      event?: NonNullable<OperationConversation["latestPaymentEvent"]>;
+    } | null;
+
+    if (paymentResponse.ok && paymentData?.ok && paymentData.event) {
+      applyPaymentProjection(selected, paymentData.event);
+      return true;
+    }
+
+    return false;
+  }
+
   async function handleReservationLifecycleAction(action: ReservationLifecycleAction) {
     if (pendingLifecycleAction) return;
 
+    const paymentAction = PAYMENT_ACTIONS[action.state];
+    const paymentAmount =
+      effectiveReservation?.total ??
+      selectedOperation?.reservation?.totalAmount ??
+      selectedOperation?.bookingValue;
+    const paymentCurrency =
+      effectiveReservation?.currency ??
+      selectedOperation?.reservation?.currency;
+
     if (selectedLifecycleEvent?.state === action.state) {
+      if (paymentAction && selectedPaymentEvent?.state !== paymentAction.state) {
+        setPendingLifecycleAction(action.state);
+        try {
+          const persisted = await persistPaymentAction(
+            paymentAction,
+            paymentAmount,
+            paymentCurrency
+          );
+          showToast(
+            persisted ? "Ödeme durumu kaydedildi" : "Ödeme durumu kaydedilemedi",
+            action.label,
+            persisted ? "success" : "new"
+          );
+          if (persisted) void liveSync.refresh();
+        } catch {
+          showToast("Ödeme durumu kaydedilemedi", action.label, "new");
+        } finally {
+          setPendingLifecycleAction(null);
+        }
+        return;
+      }
+
       showToast("Aksiyon zaten kayıtlı", action.label, "success");
       return;
     }
@@ -1216,8 +1430,22 @@ export default function ConversationsPage() {
       actor: "operator",
       severity: action.severity,
     };
-
     applyLocalLifecycleProjection(selected, optimisticEvent);
+    if (paymentAction) {
+      applyPaymentProjection(selected, {
+        id: `optimistic-payment-${selected}-${paymentAction.state}`,
+        hotel_id: selectedOperation?.hotelId ?? "demo-hotel",
+        conversation_id: selected,
+        reservation_id: selectedOperation?.reservation?.id,
+        amount: paymentAmount,
+        currency: paymentCurrency,
+        state: paymentAction.state,
+        title: paymentAction.title,
+        description: paymentAction.description,
+        timestamp: optimisticEvent.timestamp,
+        actor: "operator",
+      });
+    }
     const feedChannel: OperationFeedItem["channel"] =
       selectedOperation?.channel === "instagram" || selectedConv?.channel === "instagram"
         ? "instagram"
@@ -1265,6 +1493,9 @@ export default function ConversationsPage() {
 
       if (response.ok && data?.ok && data.event) {
         applyLocalLifecycleProjection(selected, data.event);
+        if (paymentAction) {
+          await persistPaymentAction(paymentAction, paymentAmount, paymentCurrency);
+        }
         showToast("Rezervasyon aksiyonu kaydedildi", action.label, "success");
         void liveSync.refresh();
         return;
@@ -1813,11 +2044,16 @@ export default function ConversationsPage() {
           thread={thread}
           effectiveStatus={effectiveStatus}
           effectiveReservation={effectiveReservation}
+          latestPaymentEvent={selectedPaymentEvent}
+          latestLifecycleEvent={selectedLifecycleEvent}
           sentLink={sentLink}
           onSendPaymentLink={handleSendPaymentLink}
           onLifecycleAction={handleReservationLifecycleAction}
           pendingLifecycleAction={pendingLifecycleAction}
-          activeLifecycleState={selectedLifecycleEvent?.state}
+          activeLifecycleState={
+            selectedLifecycleEvent?.state ??
+            (selectedPaymentEvent ? lifecycleStateForPayment(selectedPaymentEvent.state) : undefined)
+          }
           onTakeover={handleTakeover}
           onHandToAI={handleHandToAI}
           reservationsHref={reservationsHref}
@@ -1923,6 +2159,110 @@ function lifecycleSuggestion(
     label: "AI önerisi hazır",
     nextReply: "Talebinizi aldık. Size uygun seçenekleri hazırlıyorum.",
   };
+}
+
+function paymentSuggestion(
+  state: ReservationPaymentActionState
+): OperationConversation["aiSuggestion"] {
+  if (state === "payment_link_sent") {
+    return {
+      suggestedAction: "payment_follow_up",
+      label: "Ödeme takibi öneriliyor",
+      nextReply: PAYMENT_ACTIONS.payment_link_sent?.suggestion,
+    };
+  }
+
+  if (state === "payment_pending") {
+    return {
+      suggestedAction: "payment_follow_up",
+      label: "Hatırlatma öneriliyor",
+      nextReply: PAYMENT_ACTIONS.payment_pending?.suggestion,
+    };
+  }
+
+  if (state === "paid") {
+    return {
+      suggestedAction: "next_reply",
+      label: "Onay mesajı öneriliyor",
+      nextReply: PAYMENT_ACTIONS.confirmed?.suggestion,
+    };
+  }
+
+  return {
+    suggestedAction: "human_takeover",
+    label: "Operatör kontrolü öneriliyor",
+    nextReply: "Ödeme durumunu kontrol edin ve misafire net bilgi verin.",
+  };
+}
+
+function lifecycleStateForPayment(
+  state: ReservationPaymentActionState
+): ReservationLifecycleActionState | undefined {
+  if (state === "payment_link_sent") return "payment_link_sent";
+  if (state === "payment_pending") return "payment_pending";
+  if (state === "paid") return "confirmed";
+  if (state === "expired") return "expired";
+  return undefined;
+}
+
+function paymentStateLabel(
+  state?: ReservationPaymentActionState,
+  reservationStatus?: ConvReservation["status"]
+): string {
+  if (state === "payment_link_sent") return "Bağlantı gönderildi";
+  if (state === "payment_pending") return "Ödeme bekleniyor";
+  if (state === "paid") return "Ödendi";
+  if (state === "failed") return "Başarısız";
+  if (state === "expired") return "Süresi doldu";
+  if (state === "refunded") return "İade edildi";
+  if (reservationStatus === "confirmed") return "Ödendi";
+  if (reservationStatus === "pending_payment") return "Ödeme bekleniyor";
+  return "Başlatılmadı";
+}
+
+function paymentStateClass(
+  state?: ReservationPaymentActionState,
+  reservationStatus?: ConvReservation["status"]
+): string {
+  if (state === "paid" || reservationStatus === "confirmed") {
+    return "bg-emerald-500/15 text-emerald-300";
+  }
+
+  if (state === "failed" || state === "expired" || state === "refunded") {
+    return "bg-rose-500/15 text-rose-300";
+  }
+
+  if (state === "payment_link_sent" || state === "payment_pending" || reservationStatus === "pending_payment") {
+    return "bg-amber-500/15 text-amber-300";
+  }
+
+  return "bg-white/[0.05] text-white/45";
+}
+
+function formatPaymentAmount(
+  event: NonNullable<OperationConversation["latestPaymentEvent"]> | undefined,
+  reservation: ConvReservation | undefined
+): string {
+  if (typeof event?.amount === "number") {
+    return `${currencySymbol(event.currency ?? reservation?.currency ?? "TRY")}${event.amount.toLocaleString("tr-TR")}`;
+  }
+
+  if (reservation) {
+    return `${reservation.currency}${reservation.total.toLocaleString("tr-TR")}`;
+  }
+
+  return "Tutar bekleniyor";
+}
+
+function confirmationStateLabel(
+  lifecycleState?: ReservationLifecycleActionState,
+  reservationStatus?: ConvReservation["status"]
+): string {
+  if (lifecycleState === "confirmed" || reservationStatus === "confirmed") return "Onaylandı";
+  if (lifecycleState === "payment_pending" || lifecycleState === "payment_link_sent") return "Ödeme adımında";
+  if (reservationStatus === "pending_payment") return "Ödeme adımında";
+  if (reservationStatus === "cancelled") return "Kapandı";
+  return "Onay bekliyor";
 }
 
 function operationReservationToPanel(
@@ -2601,6 +2941,8 @@ function GuestSidebar({
   thread,
   effectiveStatus,
   effectiveReservation,
+  latestPaymentEvent,
+  latestLifecycleEvent,
   sentLink,
   onSendPaymentLink,
   onLifecycleAction,
@@ -2629,6 +2971,8 @@ function GuestSidebar({
   thread: ChatThread;
   effectiveStatus: ConversationStatus;
   effectiveReservation: ConvReservation | undefined;
+  latestPaymentEvent?: NonNullable<OperationConversation["latestPaymentEvent"]>;
+  latestLifecycleEvent?: NonNullable<OperationConversation["latestLifecycleEvent"]>;
   sentLink: boolean;
   onSendPaymentLink: () => void;
   onLifecycleAction: (action: ReservationLifecycleAction) => void;
@@ -2790,6 +3134,47 @@ function GuestSidebar({
           </div>
         </div>
       )}
+
+      {(latestPaymentEvent || r || latestLifecycleEvent) ? (
+        <div className="border-b border-white/[0.03] px-5 py-6">
+          <SidebarLabel>Ödeme durumu</SidebarLabel>
+          <div className="space-y-3 rounded-xl border border-white/[0.05] bg-white/[0.025] p-4">
+            <div className="flex items-center justify-between gap-3 text-[11px]">
+              <span className="text-white/36">Durum</span>
+              <span
+                className={cn(
+                  "rounded-full px-2.5 py-1 font-semibold",
+                  paymentStateClass(latestPaymentEvent?.state, r?.status)
+                )}
+              >
+                {paymentStateLabel(latestPaymentEvent?.state, r?.status)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3 text-[11px]">
+              <span className="text-white/36">Tutar</span>
+              <span className="font-semibold text-white/78 tabular-nums">
+                {formatPaymentAmount(latestPaymentEvent, r)}
+              </span>
+            </div>
+            {latestPaymentEvent ? (
+              <div className="border-t border-white/[0.04] pt-3">
+                <p className="text-[11px] font-semibold leading-snug text-white/78">
+                  {latestPaymentEvent.title}
+                </p>
+                <p className="mt-1 text-[10px] leading-relaxed text-white/40">
+                  {latestPaymentEvent.description}
+                </p>
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between gap-3 text-[11px]">
+              <span className="text-white/36">Rezervasyon</span>
+              <span className="font-semibold text-white/68">
+                {confirmationStateLabel(latestLifecycleEvent?.state, r?.status)}
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Quick actions */}
       <div className="border-b border-white/[0.03] px-5 py-6">

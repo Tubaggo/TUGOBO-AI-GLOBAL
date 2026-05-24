@@ -58,6 +58,27 @@ export type ReservationLifecycleEvent = {
   severity: "info" | "success" | "warning" | "error";
 };
 
+export type ReservationPaymentEvent = {
+  id: string;
+  hotel_id: string;
+  conversation_id: string;
+  reservation_id?: string;
+  amount?: number;
+  currency?: string;
+  state:
+    | "not_started"
+    | "payment_link_sent"
+    | "payment_pending"
+    | "paid"
+    | "failed"
+    | "expired"
+    | "refunded";
+  title: string;
+  description: string;
+  timestamp: string;
+  actor: "guest" | "ai" | "operator" | "system";
+};
+
 export type OperationReservationSummary = {
   id: string;
   ref?: string;
@@ -102,6 +123,7 @@ export type OperationConversation = {
   paymentState?: "none" | "pending" | "failed" | "completed";
   reservation?: OperationReservationSummary;
   latestLifecycleEvent?: ReservationLifecycleEvent;
+  latestPaymentEvent?: ReservationPaymentEvent;
   aiSuggestion?: OperationAiSuggestion;
   messages: OperationMessage[];
   externalId?: string;
