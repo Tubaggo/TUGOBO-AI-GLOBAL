@@ -48,12 +48,12 @@ export function GraphPropagationEngine({
       <div className="mb-3 flex items-center gap-2">
         <GitBranch className="h-3.5 w-3.5 text-cyan-400/90" />
         <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-400/90">
-          {isOperational ? "Revenue impact" : "Graph propagation"}
+          {isOperational ? "Gelir etkisi" : "Operasyon etki zinciri"}
         </p>
         {isLive ? (
           <span className="ml-auto flex items-center gap-1.5 text-[9px] font-semibold text-cyan-400">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
-            {isOperational ? "Updating" : "System sync"}
+            {isOperational ? "Güncelleniyor" : "Sistem eşitlendi"}
           </span>
         ) : null}
       </div>
@@ -78,8 +78,8 @@ export function GraphPropagationEngine({
       </div>
       <p className="mt-2 text-[10px] text-white/28">
         {isOperational
-          ? "Booking, revenue, and guest records updated"
-          : "Operational layers synchronized across runtime graph"}
+          ? "Rezervasyon, gelir ve misafir kayıtları güncellendi"
+          : "Operasyon katmanları eşitlendi"}
       </p>
     </div>
   );

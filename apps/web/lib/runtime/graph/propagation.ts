@@ -53,14 +53,14 @@ const EVENT_NODES: Record<OperationalEventType, PropagationNode[]> = {
 };
 
 const EVENT_SUMMARY: Record<OperationalEventType, string> = {
-  PAYMENT_FAILED: "Payment risk propagated across revenue, pipeline, guest memory, and recovery layer",
-  RECOVERY_STARTED: "Recovery orchestration synchronized to reservation and conversation runtime",
-  RECOVERY_SUCCESS: "Financial exposure cleared · guest intelligence and memory updated",
-  BOOKING_CONFIRMED: "Booking confirmed · direct pipeline and timeline updated",
-  UPSELL_ACCEPTED: "ADR uplift recorded · guest financial memory enriched",
-  VIP_ESCALATION: "VIP escalation chain activated · human pathway armed",
-  OTA_CONVERSION: "OTA conversion saved commission · loyalty graph updated",
-  HUMAN_TAKEOVER: "Human takeover propagated with full AI context attachment",
+  PAYMENT_FAILED: "Ödeme riski gelir, rezervasyon, misafir hafızası ve kurtarma katmanına işlendi",
+  RECOVERY_STARTED: "Kurtarma akışı rezervasyon ve görüşme durumuyla eşitlendi",
+  RECOVERY_SUCCESS: "Finansal risk kapatıldı · misafir zekası ve hafıza güncellendi",
+  BOOKING_CONFIRMED: "Rezervasyon onaylandı · direkt süreç ve zaman akışı güncellendi",
+  UPSELL_ACCEPTED: "ADR artışı kaydedildi · misafir finansal hafızası zenginleşti",
+  VIP_ESCALATION: "VIP yükseltme zinciri etkinleşti · operatör yolu hazırlandı",
+  OTA_CONVERSION: "OTA dönüşümü komisyonu korudu · sadakat hafızası güncellendi",
+  HUMAN_TAKEOVER: "Operatör devri tam AI bağlamıyla işlendi",
 };
 
 export function buildGraphPropagation(type: OperationalEventType): GraphPropagation {

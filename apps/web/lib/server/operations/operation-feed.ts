@@ -15,6 +15,7 @@ export type OperationFeedEventType =
   | "guest_request_received"
   | "operator_replied"
   | "ai_support_prepared"
+  | "reservation_lifecycle"
   | "connection_test_success"
   | "message_sent"
   | "delivery_failed"
@@ -73,6 +74,7 @@ function isEventType(input: unknown): input is OperationFeedEventType {
     input === "guest_request_received" ||
     input === "operator_replied" ||
     input === "ai_support_prepared" ||
+    input === "reservation_lifecycle" ||
     input === "connection_test_success" ||
     input === "message_sent" ||
     input === "delivery_failed" ||
@@ -224,6 +226,15 @@ function fallbackEventForKind(kind: string, label: string): {
     };
   }
 
+  if (kind === "reservation_lifecycle") {
+    return {
+      eventType: "reservation_lifecycle",
+      title: label,
+      description: label,
+      severity: "info",
+    };
+  }
+
   return {
     eventType: "guest_request_received",
     title: label,
@@ -232,8 +243,12 @@ function fallbackEventForKind(kind: string, label: string): {
   };
 }
 
-function safeEventFromRow(row: typeof operationalEvents.$inferSelect): SafeOperationFeedEvent {
+function safeEventFromRow(row: typeof operationalEvents.$inferSelect): SafeOperationFeedEvent | null {
   const payload = payloadRecord(row.payload);
+  if (row.kind === "reservation_lifecycle" && typeof payload.state === "string") {
+    return null;
+  }
+
   const channel = isManagedChannel(payload.channel) ? payload.channel : "web_chat";
   const fallback = fallbackEventForKind(row.kind, row.label);
   const eventType = isEventType(payload.event_type) ? payload.event_type : fallback.eventType;
@@ -322,7 +337,10 @@ export async function listOperationFeedEvents(input: {
       .orderBy(desc(operationalEvents.createdAt))
       .limit(limit);
 
-    return rows.map(safeEventFromRow);
+    return rows.flatMap((row) => {
+      const event = safeEventFromRow(row);
+      return event ? [event] : [];
+    });
   } catch {
     return [];
   }

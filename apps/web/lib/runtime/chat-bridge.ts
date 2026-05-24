@@ -104,7 +104,7 @@ export function buildChatMessagesFromTimeline(events: OperationalTimelineEvent[]
       messages.push({
         id: event.id,
         dir: "system",
-        body: `Tugobo AI · Guest context applied — ${event.detail ?? event.title}`,
+        body: `Tugobo AI · misafir bağlamı işlendi — ${event.detail ?? event.title}`,
         time,
       });
     }

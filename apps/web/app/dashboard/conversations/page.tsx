@@ -44,6 +44,7 @@ import {
   CONVERSATIONS,
   type Conversation,
   type ConversationChannel,
+  type LeadStatus,
   type ConversationStatus,
 } from "../_components/mock-data";
 import {
@@ -69,7 +70,12 @@ import { useConversationAi } from "@/lib/ai/use-guest-ai-response";
 import { useConversationAiStore } from "@/lib/stores/conversation-ai-store";
 import { simulateAIResponse } from "@/lib/channels/simulate-ai-response";
 import { stageLabel } from "@/lib/channels/channelLabels";
-import type { ChannelType, OperationConversation, OperationMessage } from "@/lib/channels/types";
+import type {
+  ChannelType,
+  OperationConversation,
+  OperationMessage,
+  OperationReservationSummary,
+} from "@/lib/channels/types";
 import { useOperationConversationStore } from "@/lib/stores/operation-conversation-store";
 import { useOperationConversationsPanel } from "@/lib/panel/use-operation-conversations";
 import { ChannelBadge, ChannelGlyph, channelDisplayLabel } from "../_components/channel-badge";
@@ -338,6 +344,62 @@ type OperationFeedItem = {
   conversation_id?: string;
 };
 
+type ReservationLifecycleActionState =
+  NonNullable<OperationConversation["latestLifecycleEvent"]>["state"];
+
+type ReservationLifecycleAction = {
+  state: ReservationLifecycleActionState;
+  label: string;
+  description: string;
+  severity: OperationFeedItem["severity"];
+  icon: React.ElementType;
+};
+
+const RESERVATION_LIFECYCLE_ACTIONS: ReservationLifecycleAction[] = [
+  {
+    state: "quote_sent",
+    label: "Teklif gönderildi",
+    description: "Misafire teklif gönderildi.",
+    severity: "success",
+    icon: FileText,
+  },
+  {
+    state: "payment_link_sent",
+    label: "Ödeme bağlantısı gönderildi",
+    description: "Misafire ödeme bağlantısı gönderildi.",
+    severity: "success",
+    icon: CreditCard,
+  },
+  {
+    state: "payment_pending",
+    label: "Ödeme bekleniyor",
+    description: "Misafirden ödeme bekleniyor.",
+    severity: "warning",
+    icon: Clock,
+  },
+  {
+    state: "confirmed",
+    label: "Rezervasyon onaylandı",
+    description: "Rezervasyon başarıyla onaylandı.",
+    severity: "success",
+    icon: CheckCircle2,
+  },
+  {
+    state: "cancelled",
+    label: "İptal edildi",
+    description: "Rezervasyon süreci iptal edildi.",
+    severity: "warning",
+    icon: AlertCircle,
+  },
+  {
+    state: "human_review_required",
+    label: "Operatör incelemesi gerekiyor",
+    description: "Rezervasyon sürecinde operatör aksiyonu gerekli.",
+    severity: "warning",
+    icon: AlertTriangle,
+  },
+];
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ConversationsPage() {
@@ -370,6 +432,12 @@ export default function ConversationsPage() {
   const [localStatuses, setLocalStatuses] = useState<Record<string, ConversationStatus>>({});
   const [localMessages, setLocalMessages] = useState<Record<string, ChatMsg[]>>({});
   const [localTyping, setLocalTyping] = useState<Record<string, boolean>>({});
+  const [localLeadStatuses, setLocalLeadStatuses] = useState<Record<string, LeadStatus>>({});
+  const [localLifecycleEvents, setLocalLifecycleEvents] = useState<
+    Record<string, OperationConversation["latestLifecycleEvent"]>
+  >({});
+  const [pendingLifecycleAction, setPendingLifecycleAction] =
+    useState<ReservationLifecycleActionState | null>(null);
   const [localUnreads, setLocalUnreads] = useState<Record<string, number>>(
     Object.fromEntries(CONVERSATIONS.map((c) => [c.id, c.unread]))
   );
@@ -388,6 +456,7 @@ export default function ConversationsPage() {
   const demoActiveRef = useRef(false);
   const demoTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const demoRoundRef = useRef(0);
+  const lifecycleHydratedKeysRef = useRef<Record<string, string>>({});
 
   const [opsPhase, setOpsPhase] = useState<OpsPhase>("triage");
   const [opsPulseAt, setOpsPulseAt] = useState<number>(() => Date.now());
@@ -414,18 +483,48 @@ export default function ConversationsPage() {
 
   // ── Derived values for selected conversation ───────────────────────────────
 
-  const staticIds = new Set(CONVERSATIONS.map((c) => c.id));
-  const operationConvs = opPanel.panelConversations.filter((c) => !staticIds.has(c.id));
-  const allConvs: Conversation[] = [...operationConvs, ...demoConversations, ...CONVERSATIONS];
+  const staticIds = useMemo(() => new Set(CONVERSATIONS.map((c) => c.id)), []);
+  const operationConvs = useMemo(
+    () => opPanel.panelConversations.filter((c) => !staticIds.has(c.id)),
+    [opPanel.panelConversations, staticIds]
+  );
+  const allConvs: Conversation[] = useMemo(
+    () => [...operationConvs, ...demoConversations, ...CONVERSATIONS],
+    [demoConversations, operationConvs]
+  );
   const selectedConv = allConvs.find((c) => c.id === selected);
   const thread =
     CHAT_THREADS[selected] ??
     demoChatThreads[selected] ??
     opPanel.threadsById[selected];
   const selectedOperation = opPanel.getOperationSummary(selected);
+  const allConversationIds = allConvs.map((conversation) => conversation.id).join("|");
+  const lifecycleHydrationTargets = useMemo(() => {
+    const operationById = new Map(
+      opPanel.rawConversations.map((conversation) => [conversation.id, conversation])
+    );
+    return allConvs.map((conversation) => ({
+      id: conversation.id,
+      hotelId: operationById.get(conversation.id)?.hotelId ?? "demo-hotel",
+    }));
+  }, [allConvs, opPanel.rawConversations]);
 
   const hasLocalStatus = selected in localStatuses;
   const effectiveStatus: ConversationStatus = localStatuses[selected] ?? selectedConv?.status;
+  const effectiveLeadStatus: LeadStatus | undefined =
+    localLeadStatuses[selected] ?? selectedConv?.leadStatus;
+  const selectedLifecycleEvent =
+    selectedOperation?.latestLifecycleEvent ?? localLifecycleEvents[selected];
+  const selectedAiSuggestion =
+    selectedOperation?.aiSuggestion ??
+    (selectedLifecycleEvent ? lifecycleSuggestion(selectedLifecycleEvent.state) : undefined);
+  const selectedConversationForPanel = selectedConv
+    ? {
+        ...selectedConv,
+        status: effectiveStatus,
+        leadStatus: effectiveLeadStatus ?? selectedConv.leadStatus,
+      }
+    : undefined;
   const allMessages: ChatMsg[] = [...(thread?.messages ?? []), ...(localMessages[selected] ?? [])];
   const isAiTyping = hasLocalStatus
     ? (localTyping[selected] ?? false)
@@ -433,11 +532,14 @@ export default function ConversationsPage() {
 
   // Reservation: localReservations (demo / manual) takes priority over thread data
   const rawReservation = localReservations[selected] ?? thread?.reservation;
+  const operationReservation = selectedOperation?.reservation
+    ? operationReservationToPanel(selectedOperation.reservation, selectedConv?.contact.name)
+    : undefined;
   const effectiveReservation: ConvReservation | undefined = rawReservation
     ? confirmedReservations[selected]
       ? { ...rawReservation, status: "confirmed" as const }
       : rawReservation
-    : undefined;
+    : operationReservation;
 
   const selectedReservationStatus = effectiveReservation?.status;
 
@@ -452,7 +554,7 @@ export default function ConversationsPage() {
 
       try {
         const params = new URLSearchParams({ limit: "3" });
-        if (isLiveConversationId(selected) || selected.startsWith("demo-manychat-")) {
+        if (isLivePanel || isLiveConversationId(selected) || selected.startsWith("demo-manychat-")) {
           params.set("conversation_id", selected);
         }
         const res = await fetch(`/api/operations/feed?${params.toString()}`);
@@ -463,6 +565,25 @@ export default function ConversationsPage() {
 
         if (!cancelled) {
           setOperationFeed(data?.ok && Array.isArray(data.events) ? data.events : []);
+        }
+
+        if (isLivePanel || selectedOperation || selected.startsWith("demo-manychat-")) {
+          const lifecycleParams = new URLSearchParams();
+          const hotelId = selectedOperation?.hotelId ?? "demo-hotel";
+          lifecycleParams.set("hotel_id", hotelId);
+          const lifecycleRes = await fetch(
+            `/api/conversations/${selected}/reservation-lifecycle?${lifecycleParams.toString()}`
+          );
+          const lifecycleData = (await lifecycleRes.json().catch(() => null)) as {
+            ok?: boolean;
+            events?: NonNullable<OperationConversation["latestLifecycleEvent"]>[];
+          } | null;
+          const latestLifecycleEvent = lifecycleData?.events?.[0];
+
+          if (!cancelled && latestLifecycleEvent) {
+            applyLocalLifecycleProjection(selected, latestLifecycleEvent);
+            applyOperationLifecycleProjection(selected, latestLifecycleEvent);
+          }
         }
       } catch {
         if (!cancelled) setOperationFeed([]);
@@ -477,6 +598,54 @@ export default function ConversationsPage() {
       window.clearInterval(interval);
     };
   }, [isLivePanel, selected, selectedOperation]);
+
+  useEffect(() => {
+    if (!isLivePanel && !opPanel.rawConversations.length) return;
+    if (!allConversationIds) return;
+
+    let cancelled = false;
+
+    async function hydratePersistedLifecycle() {
+      await Promise.all(
+        lifecycleHydrationTargets.map(async (target) => {
+          const hydrationKey = `${target.hotelId}:${target.id}`;
+          if (lifecycleHydratedKeysRef.current[hydrationKey]) return;
+
+          try {
+            const params = new URLSearchParams({ hotel_id: target.hotelId });
+            const response = await fetch(
+              `/api/conversations/${target.id}/reservation-lifecycle?${params.toString()}`
+            );
+            const data = (await response.json().catch(() => null)) as {
+              ok?: boolean;
+              events?: NonNullable<OperationConversation["latestLifecycleEvent"]>[];
+            } | null;
+
+            if (cancelled) return;
+
+            const latestLifecycleEvent = data?.events?.[0];
+            lifecycleHydratedKeysRef.current[hydrationKey] =
+              latestLifecycleEvent?.id ?? "none";
+
+            if (!latestLifecycleEvent) return;
+
+            applyLocalLifecycleProjection(target.id, latestLifecycleEvent);
+            applyOperationLifecycleProjection(target.id, latestLifecycleEvent);
+          } catch {
+            if (!cancelled) {
+              lifecycleHydratedKeysRef.current[hydrationKey] = "failed";
+            }
+          }
+        })
+      );
+    }
+
+    void hydratePersistedLifecycle();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [allConversationIds, isLivePanel, lifecycleHydrationTargets, opPanel.rawConversations.length]);
 
   // Pre-compute confirmed metrics for MetricsBar (includes demo revenue via localReservations)
   const confirmedCount = Object.values(confirmedReservations).filter(Boolean).length;
@@ -510,6 +679,121 @@ export default function ConversationsPage() {
       opPanel.threadsById[convId]?.messages ??
       [];
     return [...base, ...(localMessages[convId] ?? [])];
+  }
+
+  function reservationStatusForLifecycle(
+    state: ReservationLifecycleActionState
+  ): ConvReservation["status"] | undefined {
+    if (state === "quote_sent" || state === "quote_prepared") return "quoted";
+    if (state === "payment_link_sent" || state === "payment_pending") return "pending_payment";
+    if (state === "confirmed") return "confirmed";
+    if (state === "cancelled" || state === "expired") return "cancelled";
+    if (state === "human_review_required") return "human_review";
+    return undefined;
+  }
+
+  function leadStatusForLifecycle(state: ReservationLifecycleActionState): LeadStatus {
+    if (state === "confirmed") return "confirmed";
+    if (state === "cancelled" || state === "expired") return "lost";
+    if (
+      state === "quote_sent" ||
+      state === "quote_prepared" ||
+      state === "payment_link_sent" ||
+      state === "payment_pending"
+    ) {
+      return "quoted";
+    }
+    return "new";
+  }
+
+  function conversationStatusForLifecycle(
+    state: ReservationLifecycleActionState,
+    fallback: ConversationStatus
+  ): ConversationStatus {
+    if (state === "confirmed") return "resolved";
+    if (state === "human_review_required") return "human_takeover";
+    return fallback === "resolved" && state !== "cancelled" && state !== "expired"
+      ? "ai_active"
+      : fallback;
+  }
+
+  function applyLocalLifecycleProjection(
+    conversationId: string,
+    event: NonNullable<OperationConversation["latestLifecycleEvent"]>
+  ) {
+    setLocalLifecycleEvents((prev) => ({ ...prev, [conversationId]: event }));
+    setLocalLeadStatuses((prev) => ({
+      ...prev,
+      [conversationId]: leadStatusForLifecycle(event.state),
+    }));
+
+    const nextStatus = reservationStatusForLifecycle(event.state);
+    const existingReservation =
+      localReservations[conversationId] ??
+      CHAT_THREADS[conversationId]?.reservation ??
+      demoChatThreads[conversationId]?.reservation;
+
+    if (nextStatus && existingReservation) {
+      setLocalReservations((prev) => ({
+        ...prev,
+        [conversationId]: {
+          ...(prev[conversationId] ?? existingReservation),
+          status: nextStatus,
+        },
+      }));
+      setConfirmedReservations((prev) => ({
+        ...prev,
+        [conversationId]: nextStatus === "confirmed",
+      }));
+    }
+
+    setLocalStatuses((prev) => {
+      const baseStatus =
+        prev[conversationId] ??
+        allConvs.find((conversation) => conversation.id === conversationId)?.status ??
+        "ai_active";
+      return {
+        ...prev,
+        [conversationId]: conversationStatusForLifecycle(event.state, baseStatus),
+      };
+    });
+  }
+
+  function applyOperationLifecycleProjection(
+    conversationId: string,
+    event: NonNullable<OperationConversation["latestLifecycleEvent"]>
+  ) {
+    useOperationConversationStore.setState((state) => ({
+      conversations: state.conversations.map((conversation) =>
+        conversation.id === conversationId
+          ? {
+              ...conversation,
+              stage: lifecycleStateToStage(event.state),
+              statusLabel: event.title,
+              latestLifecycleEvent: event,
+              aiSuggestion: lifecycleSuggestion(event.state),
+              requiresHuman:
+                event.state === "human_review_required" || conversation.requiresHuman,
+              reservation: conversation.reservation
+                ? {
+                    ...conversation.reservation,
+                    status:
+                      event.state === "confirmed"
+                        ? "confirmed"
+                        : event.state === "cancelled" || event.state === "expired"
+                          ? "cancelled"
+                          : event.state === "payment_link_sent" ||
+                              event.state === "payment_pending"
+                            ? "pending_payment"
+                            : event.state === "quote_sent" || event.state === "quote_prepared"
+                              ? "quoted"
+                              : conversation.reservation.status,
+                  }
+                : conversation.reservation,
+            }
+          : conversation
+      ),
+    }));
   }
 
   function manychatExternalUserIdFromExternalId(operation: OperationConversation): string | null {
@@ -724,7 +1008,7 @@ export default function ConversationsPage() {
       void triggerGuestAiResponse(incomingId, msg.body);
       if (selectedRef.current !== incomingId) {
         setLocalUnreads((prev) => ({ ...prev, [incomingId]: (prev[incomingId] ?? 0) + 1 }));
-        showToast("New message · Ahmet Yılmaz 🇹🇷", msg.body, "new");
+        showToast("Yeni mesaj · Ahmet Yılmaz 🇹🇷", msg.body, "new");
       }
     }, 8000);
     return () => clearTimeout(timer);
@@ -747,7 +1031,7 @@ export default function ConversationsPage() {
       void triggerGuestAiResponse(incomingId, msg.body);
       if (selectedRef.current !== incomingId) {
         setLocalUnreads((prev) => ({ ...prev, [incomingId]: (prev[incomingId] ?? 0) + 1 }));
-        showToast("New message · Elena Petrov 🇷🇺", "Still waiting for room confirmation", "new");
+        showToast("Yeni mesaj · Elena Petrov 🇷🇺", "Oda onayı için yanıt bekliyor", "new");
       }
     }, 22000);
     return () => clearTimeout(timer);
@@ -797,7 +1081,7 @@ export default function ConversationsPage() {
       new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     const t0 = ts();
 
-    // ── 1. New inquiry appears in list ──────────────────────────────────────
+    // ── 1. Yeni talep listeye düşer ─────────────────────────────────────────
     const newConv: Conversation = {
       id: convId,
       contact: { name: guest.name, initials: guest.initials, avatarColor: guest.avatarColor, phone: guest.phone },
@@ -818,7 +1102,7 @@ export default function ConversationsPage() {
     setLocalUnreads((prev) => ({ ...prev, [convId]: 1 }));
     setLocalLastMsgs((prev) => ({ ...prev, [convId]: guest.inquiry }));
     setSelected(convId);
-    showToast(`New inquiry · ${guest.name} ${guest.flag}`, guest.inquiry.slice(0, 52) + "…", "new");
+    showToast(`Yeni talep · ${guest.name} ${guest.flag}`, guest.inquiry.slice(0, 52) + "…", "new");
 
     // ── 2–3. AI greeting (real provider with scripted fallback) ─────────────
     addDemoTimeout(() => {
@@ -881,7 +1165,7 @@ export default function ConversationsPage() {
       );
     }, 17500);
 
-    // ── 9. Payment confirmed → reservation confirmed + revenue up ───────────
+    // ── 9. Ödeme onayı → rezervasyon onayı + gelir artışı ───────────────────
     addDemoTimeout(() => {
       const sysTime = ts();
       const total = guest.pricePerNight * guest.nights;
@@ -890,7 +1174,7 @@ export default function ConversationsPage() {
       );
       setConfirmedReservations((prev) => ({ ...prev, [convId]: true }));
       addMessages(convId, [
-        { id: `${convId}-sys`, dir: "system", body: `Payment received · ${guest.currency}${total.toLocaleString()} · ${sysTime}`, time: sysTime },
+        { id: `${convId}-sys`, dir: "system", body: `Ödeme alındı · ${guest.currency}${total.toLocaleString()} · ${sysTime}`, time: sysTime },
         { id: `${convId}-ai4`, dir: "out", by: "ai", body: guest.aiConfirm, time: sysTime },
       ]);
       setLocalStatuses((prev) => ({ ...prev, [convId]: "resolved" }));
@@ -909,7 +1193,102 @@ export default function ConversationsPage() {
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
+  async function handleReservationLifecycleAction(action: ReservationLifecycleAction) {
+    if (pendingLifecycleAction) return;
+
+    if (selectedLifecycleEvent?.state === action.state) {
+      showToast("Aksiyon zaten kayıtlı", action.label, "success");
+      return;
+    }
+
+    setPendingLifecycleAction(action.state);
+    if (action.state === "payment_link_sent") setSentLink(true);
+
+    const optimisticEvent: NonNullable<OperationConversation["latestLifecycleEvent"]> = {
+      id: `optimistic-${selected}-${action.state}`,
+      hotel_id: selectedOperation?.hotelId ?? "demo-hotel",
+      conversation_id: selected,
+      reservation_id: selectedOperation?.reservation?.id,
+      state: action.state,
+      title: action.label,
+      description: action.description,
+      timestamp: new Date().toISOString(),
+      actor: "operator",
+      severity: action.severity,
+    };
+
+    applyLocalLifecycleProjection(selected, optimisticEvent);
+    const feedChannel: OperationFeedItem["channel"] =
+      selectedOperation?.channel === "instagram" || selectedConv?.channel === "instagram"
+        ? "instagram"
+        : selectedOperation?.channel === "whatsapp" || selectedConv?.channel === "whatsapp"
+          ? "whatsapp"
+          : "web_chat";
+
+    setOperationFeed((prev) => [
+      {
+        id: `optimistic-feed-${selected}-${action.state}`,
+        channel: feedChannel,
+        event_type: "reservation_lifecycle",
+        title: action.label,
+        description: action.description,
+        timestamp: optimisticEvent.timestamp,
+        severity: action.severity,
+        conversation_id: selected,
+      },
+      ...prev.filter(
+        (event) => !(event.conversation_id === selected && event.title === action.label)
+      ),
+    ].slice(0, 3));
+
+    applyOperationLifecycleProjection(selected, optimisticEvent);
+
+    try {
+      const response = await fetch(`/api/conversations/${selected}/reservation-lifecycle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hotel_id: selectedOperation?.hotelId ?? "demo-hotel",
+          reservation_id: selectedOperation?.reservation?.id,
+          state: action.state,
+          actor: "operator",
+          title: action.label,
+          description: action.description,
+          severity: action.severity,
+        }),
+      });
+
+      const data = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        event?: NonNullable<OperationConversation["latestLifecycleEvent"]>;
+      } | null;
+
+      if (response.ok && data?.ok && data.event) {
+        applyLocalLifecycleProjection(selected, data.event);
+        showToast("Rezervasyon aksiyonu kaydedildi", action.label, "success");
+        void liveSync.refresh();
+        return;
+      }
+
+      showToast("Aksiyon kaydedilemedi", action.label, "new");
+    } catch {
+      showToast("Aksiyon kaydedilemedi", action.label, "new");
+    } finally {
+      setPendingLifecycleAction(null);
+      if (action.state === "payment_link_sent") {
+        window.setTimeout(() => setSentLink(false), 900);
+      }
+    }
+  }
+
   function handleSendPaymentLink() {
+    const action = RESERVATION_LIFECYCLE_ACTIONS.find(
+      (item) => item.state === "payment_link_sent"
+    );
+    if (action) void handleReservationLifecycleAction(action);
+  }
+
+  function handleLegacySendPaymentLink() {
     setSentLink(true);
     const r = effectiveReservation;
     showToast(
@@ -919,6 +1298,24 @@ export default function ConversationsPage() {
         : undefined
     );
 
+    if (isLivePanel && liveApi.enabled && isLiveConversationId(selected)) {
+      void fetch(`/api/conversations/${selected}/reservation-lifecycle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          state: "payment_link_sent",
+          actor: "operator",
+          title: "Ödeme bağlantısı gönderildi",
+          description: "Misafire ödeme bağlantısı gönderildi.",
+          severity: "success",
+        }),
+      }).then(() => {
+        setSentLink(false);
+        void liveSync.refresh();
+      });
+      return;
+    }
+
     setTimeout(() => {
       setSentLink(false);
       if (!r) return;
@@ -927,12 +1324,12 @@ export default function ConversationsPage() {
       const sysMsg: ChatMsg = {
         id: `sys-payment-${Date.now()}`,
         dir: "system",
-        body: `Payment received · ${r.currency}${r.total.toLocaleString()} · ${now}`,
+        body: `Ödeme alındı · ${r.currency}${r.total.toLocaleString()} · ${now}`,
         time: now,
       };
       const aiBody =
         PAYMENT_CONFIRM_MSGS[selected] ??
-        `Payment confirmed ✅ Your ${r.room} is fully booked!\n\nA confirmation has been sent to your WhatsApp. We look forward to welcoming you on ${r.checkIn}! 🌟`;
+        `Ödeme onaylandı. ${r.room} rezervasyonunuz tamamlandı.\n\nOnay bilgisi kanal üzerinden paylaşıldı. ${r.checkIn} tarihinde sizi ağırlamaktan memnuniyet duyarız.`;
       const aiMsg: ChatMsg = {
         id: `ai-confirm-${Date.now()}`,
         dir: "out",
@@ -950,6 +1347,8 @@ export default function ConversationsPage() {
       );
     }, 3500);
   }
+
+  void handleLegacySendPaymentLink;
 
   function handleTakeover() {
     setLocalStatuses((prev) => ({ ...prev, [selected]: "human_takeover" }));
@@ -1144,6 +1543,7 @@ export default function ConversationsPage() {
         localUnreads={localUnreads}
         localLastMsgs={localLastMsgs}
         localStatuses={localStatuses}
+        localLeadStatuses={localLeadStatuses}
         localTyping={localTyping}
         locale="tr"
         queueStats={isLivePanel ? live.queueStats : undefined}
@@ -1207,7 +1607,9 @@ export default function ConversationsPage() {
                   <ChannelBadge channel={selectedConv.channel} className="!py-0" />
                   <span className="text-white/20">·</span>
                   <span className="truncate">
-                    {selectedOperation
+                    {selectedLifecycleEvent
+                      ? selectedLifecycleEvent.title
+                      : selectedOperation
                       ? stageLabel(selectedOperation.stage)
                       : conversationAi.reservationStage
                         ? aiReservationStageLabel(conversationAi.reservationStage)
@@ -1217,7 +1619,7 @@ export default function ConversationsPage() {
                 <div className="mt-1.5 hidden flex-wrap items-center gap-2 md:flex">
                   <LanguageFlag lang={selectedConv.language} />
                   <StatusBadge status={effectiveStatus} />
-                  <LeadBadge status={selectedConv.leadStatus} />
+                  <LeadBadge status={effectiveLeadStatus ?? selectedConv.leadStatus} />
                 </div>
               </div>
             </div>
@@ -1289,7 +1691,7 @@ export default function ConversationsPage() {
             <div className="mx-auto w-full max-w-[min(100%,30.5rem)]">
               <div className="mb-7 flex justify-center">
                 <span className="rounded-full border border-white/[0.045] bg-white/[0.025] px-4 py-1.5 text-[11px] font-medium text-white/32">
-                  {selectedConv.time.includes("d ago") ? "Yesterday" : "Today"}
+                  {selectedConv.time.includes("d ago") ? "Dün" : "Bugün"}
                 </span>
               </div>
               {allMessages.map((msg, i) => (
@@ -1407,12 +1809,15 @@ export default function ConversationsPage() {
           </div>
           <GuestSidebar
           compact={mobilePane === "summary" || tabletSummaryOpen}
-          conv={selectedConv}
+          conv={selectedConversationForPanel ?? selectedConv}
           thread={thread}
           effectiveStatus={effectiveStatus}
           effectiveReservation={effectiveReservation}
           sentLink={sentLink}
           onSendPaymentLink={handleSendPaymentLink}
+          onLifecycleAction={handleReservationLifecycleAction}
+          pendingLifecycleAction={pendingLifecycleAction}
+          activeLifecycleState={selectedLifecycleEvent?.state}
           onTakeover={handleTakeover}
           onHandToAI={handleHandToAI}
           reservationsHref={reservationsHref}
@@ -1447,19 +1852,21 @@ export default function ConversationsPage() {
           pendingAiReply={
             conversationAi.status === "awaiting_approval"
               ? conversationAi.lastResponse?.reply
-              : undefined
+              : selectedAiSuggestion?.nextReply
           }
           operationStage={
-            selectedOperation ? stageLabel(selectedOperation.stage) : undefined
+            selectedLifecycleEvent?.title ??
+            (selectedOperation ? stageLabel(selectedOperation.stage) : undefined)
           }
           operationChannel={
             selectedOperation ? channelDisplayLabel(selectedOperation.channel) : undefined
           }
           operationBookingValue={selectedOperation?.bookingValue}
           operationSuggestedAction={
-            selectedOperation?.requiresHuman
+            selectedAiSuggestion?.label ??
+            (selectedOperation?.requiresHuman
               ? "İnsan desteği devralsın"
-              : selectedOperation?.statusLabel
+              : selectedOperation?.statusLabel)
           }
           operationLastActivity={
             selectedOperation
@@ -1479,6 +1886,89 @@ export default function ConversationsPage() {
 }
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
+
+function lifecycleStateToStage(
+  state: NonNullable<OperationConversation["latestLifecycleEvent"]>["state"]
+): OperationConversation["stage"] {
+  if (state === "quote_prepared" || state === "quote_sent") return "offer_sent";
+  if (state === "payment_link_sent" || state === "payment_pending") return "payment_pending";
+  if (state === "confirmed") return "confirmed";
+  if (state === "human_review_required" || state === "cancelled" || state === "expired") {
+    return "human_review";
+  }
+  return "new_inquiry";
+}
+
+function lifecycleSuggestion(
+  state: NonNullable<OperationConversation["latestLifecycleEvent"]>["state"]
+): OperationConversation["aiSuggestion"] {
+  if (state === "payment_link_sent" || state === "payment_pending") {
+    return {
+      suggestedAction: "payment_follow_up",
+      label: "Misafir yanıt bekliyor",
+      nextReply: "Ödeme bağlantısını tekrar paylaşabilirim veya ödeme adımında yardımcı olabilirim.",
+    };
+  }
+
+  if (state === "human_review_required") {
+    return {
+      suggestedAction: "human_takeover",
+      label: "Operatör aksiyonu gerekli",
+      nextReply: "Bu talepte operatör incelemesi gerekiyor.",
+    };
+  }
+
+  return {
+    suggestedAction: "next_reply",
+    label: "AI önerisi hazır",
+    nextReply: "Talebinizi aldık. Size uygun seçenekleri hazırlıyorum.",
+  };
+}
+
+function operationReservationToPanel(
+  reservation: OperationReservationSummary,
+  guestName = "Misafir"
+): ConvReservation {
+  const dateFormatter = new Intl.DateTimeFormat("tr-TR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const checkIn = reservation.checkIn
+    ? dateFormatter.format(new Date(reservation.checkIn))
+    : "Tarih bekleniyor";
+  const checkOut = reservation.checkOut
+    ? dateFormatter.format(new Date(reservation.checkOut))
+    : "Tarih bekleniyor";
+  const checkInDate = reservation.checkIn ? new Date(reservation.checkIn) : null;
+  const checkOutDate = reservation.checkOut ? new Date(reservation.checkOut) : null;
+  const nights =
+    checkInDate && checkOutDate
+      ? Math.max(1, Math.round((checkOutDate.getTime() - checkInDate.getTime()) / 86400000))
+      : 1;
+  const total = reservation.totalAmount ?? 0;
+
+  return {
+    ref: reservation.ref ?? reservation.id.slice(0, 8).toUpperCase(),
+    guest: guestName,
+    room: reservation.roomType ?? "Rezervasyon talebi",
+    checkIn,
+    checkOut,
+    guests: reservation.guestCount ?? 1,
+    nights,
+    pricePerNight: nights > 0 ? Math.round(total / nights) : total,
+    total,
+    currency: currencySymbol(reservation.currency),
+    status: reservation.status,
+  };
+}
+
+function currencySymbol(currency: string): string {
+  if (currency === "TRY") return "₺";
+  if (currency === "EUR") return "€";
+  if (currency === "USD") return "$";
+  return `${currency} `;
+}
 
 function Toast({ toast }: { toast: ToastData | null }) {
   if (!toast) return null;
@@ -1733,6 +2223,7 @@ function ConvList({
   localUnreads,
   localLastMsgs,
   localStatuses,
+  localLeadStatuses,
   localTyping,
   locale = "tr",
   queueStats,
@@ -1755,6 +2246,7 @@ function ConvList({
   localUnreads: Record<string, number>;
   localLastMsgs: Record<string, string>;
   localStatuses: Record<string, ConversationStatus>;
+  localLeadStatuses: Record<string, LeadStatus>;
   localTyping: Record<string, boolean>;
   locale?: "tr" | "en";
   queueStats?: LiveQueueStats;
@@ -1945,6 +2437,7 @@ function ConvList({
           const lastMsg = localLastMsgs[conv.id] ?? overlay?.lastMessage ?? conv.lastMessage;
           const hasUnread = unread > 0;
           const effectiveConvStatus = localStatuses[conv.id] ?? overlay?.status ?? conv.status;
+          const effectiveConvLeadStatus = localLeadStatuses[conv.id] ?? conv.leadStatus;
           const isAiHandling = effectiveConvStatus === "ai_active";
           const isAiWorking = isAiHandling && (localTyping[conv.id] ?? CHAT_THREADS[conv.id]?.aiTyping ?? false);
           // Show waiting indicator only for human_takeover with unread messages
@@ -2054,7 +2547,7 @@ function ConvList({
                   <div className="flex items-center justify-between gap-2">
                     <div className={cn("flex min-w-0 flex-wrap items-center gap-1.5", !isSelected && "opacity-[0.85]")}>
                       <StatusBadge status={effectiveConvStatus} />
-                      <LeadBadge status={conv.leadStatus} />
+                      <LeadBadge status={effectiveConvLeadStatus} />
                       {overlay?.paymentRisk ? (
                         <span className="rounded border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-semibold text-amber-200/90">
                           {t("paymentBadge")}
@@ -2110,6 +2603,9 @@ function GuestSidebar({
   effectiveReservation,
   sentLink,
   onSendPaymentLink,
+  onLifecycleAction,
+  pendingLifecycleAction,
+  activeLifecycleState,
   onTakeover,
   onHandToAI,
   reservationsHref,
@@ -2135,6 +2631,9 @@ function GuestSidebar({
   effectiveReservation: ConvReservation | undefined;
   sentLink: boolean;
   onSendPaymentLink: () => void;
+  onLifecycleAction: (action: ReservationLifecycleAction) => void;
+  pendingLifecycleAction: ReservationLifecycleActionState | null;
+  activeLifecycleState?: ReservationLifecycleActionState;
   onTakeover: () => void;
   onHandToAI: () => void;
   reservationsHref: string;
@@ -2159,6 +2658,7 @@ function GuestSidebar({
   const r = effectiveReservation;
   const showPaymentBtn = r && (r.status === "pending_payment" || r.status === "quoted");
   const confidence = aiConfidence ?? 87;
+  const showLifecycleActions = Boolean(r || operationChannel);
 
   return (
     <div className={cn("flex w-full flex-col", compact ? "bg-transparent" : "conv-scroll shrink-0 overflow-y-auto bg-zinc-950/40 lg:w-[284px]")}>
@@ -2230,7 +2730,11 @@ function GuestSidebar({
               "rounded-xl border p-5 transition-all duration-500",
               r.status === "confirmed"
                 ? "border-emerald-500/20 bg-emerald-500/[0.04]"
+                : r.status === "cancelled"
+                ? "border-rose-500/20 bg-rose-500/[0.04]"
                 : r.status === "pending_payment"
+                ? "border-amber-500/24 bg-amber-500/[0.05]"
+                : r.status === "human_review"
                 ? "border-amber-500/24 bg-amber-500/[0.05]"
                 : "border-blue-500/20 bg-blue-500/[0.04]"
             )}
@@ -2242,13 +2746,21 @@ function GuestSidebar({
                   "text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all duration-500",
                   r.status === "confirmed"
                     ? "bg-emerald-500/15 text-emerald-400"
+                    : r.status === "cancelled"
+                    ? "bg-rose-500/15 text-rose-300"
                     : r.status === "pending_payment"
                     ? "bg-amber-500/15 text-amber-400"
+                    : r.status === "human_review"
+                    ? "bg-amber-500/15 text-amber-300"
                     : "bg-blue-500/15 text-blue-400"
                 )}
               >
                 {r.status === "confirmed"
                   ? tCommon("confirmed")
+                  : r.status === "cancelled"
+                  ? "İptal edildi"
+                  : r.status === "human_review"
+                  ? "Operatör incelemesi"
                   : r.status === "pending_payment"
                   ? tCommon("pendingPayment")
                   : tCommon("quoteSent")}
@@ -2283,7 +2795,40 @@ function GuestSidebar({
       <div className="border-b border-white/[0.03] px-5 py-6">
         <SidebarLabel>{t("quickActions")}</SidebarLabel>
         <div className="flex flex-col gap-3">
-          {showPaymentBtn && (
+          {showLifecycleActions ? (
+            <div className="grid grid-cols-1 gap-2">
+              {RESERVATION_LIFECYCLE_ACTIONS.map((action) => {
+                const Icon = action.icon;
+                const active = activeLifecycleState === action.state;
+                const pending = pendingLifecycleAction === action.state;
+                return (
+                  <button
+                    key={action.state}
+                    type="button"
+                    onClick={() => onLifecycleAction(action)}
+                    disabled={Boolean(pendingLifecycleAction)}
+                    className={cn(
+                      "flex w-full items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left text-[12px] font-semibold transition-[background-color,color,border-color,transform,opacity] duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55",
+                      active
+                        ? "border-emerald-500/24 bg-emerald-500/10 text-emerald-200"
+                        : action.severity === "success"
+                          ? "border-blue-500/18 bg-blue-500/[0.07] text-blue-100/85 hover:border-blue-500/28 hover:bg-blue-500/[0.1]"
+                          : "border-amber-500/18 bg-amber-500/[0.06] text-amber-100/84 hover:border-amber-500/28 hover:bg-amber-500/[0.1]"
+                    )}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="min-w-0 flex-1">{action.label}</span>
+                    {pending ? (
+                      <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin opacity-70" />
+                    ) : active ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 opacity-80" />
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+          {showPaymentBtn && !showLifecycleActions && (
             <button
               type="button"
               onClick={onSendPaymentLink}
@@ -2576,6 +3121,24 @@ function ReservationCard({
       iconColor: "text-blue-400",
       badge: "bg-blue-500/15 text-blue-400 border-blue-500/25",
       dot: "bg-blue-400",
+    },
+    cancelled: {
+      label: "İptal edildi",
+      icon: AlertCircle,
+      border: "border-rose-500/25",
+      header: "bg-rose-500/[0.07]",
+      iconColor: "text-rose-400",
+      badge: "bg-rose-500/15 text-rose-300 border-rose-500/25",
+      dot: "bg-rose-400",
+    },
+    human_review: {
+      label: "Operatör incelemesi",
+      icon: AlertTriangle,
+      border: "border-amber-500/25",
+      header: "bg-amber-500/[0.07]",
+      iconColor: "text-amber-400",
+      badge: "bg-amber-500/15 text-amber-300 border-amber-500/25",
+      dot: "bg-amber-400 animate-pulse",
     },
   };
 

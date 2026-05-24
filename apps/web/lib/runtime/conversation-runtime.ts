@@ -11,16 +11,16 @@ import type { AIAction, UnifiedTimelineEntry } from "./entities";
 import { op } from "@/lib/i18n/operationalTexts";
 
 export type OperationalStatusLabel =
-  | "PAYMENT FRICTION"
-  | "RECOVERY ACTIVE"
-  | "HIGH VALUE"
-  | "DIRECT BOOKING"
-  | "ESCALATION RISK"
-  | "VIP GUEST"
-  | "NEW INQUIRY"
-  | "REVIEW RISK"
-  | "MONITORING"
-  | "STAFF ASSISTING";
+  | "ÖDEME SORUNU"
+  | "KURTARMA AKTİF"
+  | "YÜKSEK DEĞER"
+  | "DİREKT REZERVASYON"
+  | "MÜDAHALE RİSKİ"
+  | "VIP MİSAFİR"
+  | "YENİ TALEP"
+  | "İNCELEME RİSKİ"
+  | "İZLEMEDE"
+  | "OPERATÖR DESTEKLİ";
 
 export type GuestRuntimeSignals = {
   operationalStatuses: OperationalStatusLabel[];
@@ -90,7 +90,7 @@ const THREAD_CHRONOLOGY: Record<string, ChronologyBeat[]> = {
       id: "c2-g1",
       displayKind: "guest_message",
       timestamp: "11:02",
-      title: "Guest message",
+      title: "Misafir mesajı",
       quote: "Triple room Jun 28–Jul 3 looks good — sending payment now.",
       priority: "medium",
     },
@@ -98,7 +98,7 @@ const THREAD_CHRONOLOGY: Record<string, ChronologyBeat[]> = {
       id: "c2-g2",
       displayKind: "guest_message",
       timestamp: "11:14",
-      title: "Guest message",
+      title: "Misafir mesajı",
       quote: "I already tried the payment link twice. It keeps failing.",
       priority: "high",
     },
@@ -106,17 +106,17 @@ const THREAD_CHRONOLOGY: Record<string, ChronologyBeat[]> = {
       id: "c2-i1",
       displayKind: "ai_interpretation",
       timestamp: "11:15",
-      title: "Payment hesitation detected",
-      detail: "Abandonment risk increasing.",
-      signals: ["Repeated payment retry", "Rising frustration in wording", "Booking still intent-positive"],
+      title: "Ödeme kararsızlığı algılandı",
+      detail: "Vazgeçme riski artıyor.",
+      signals: ["Tekrarlanan ödeme denemesi", "Mesaj tonunda yükselen gerginlik", "Rezervasyon niyeti hâlâ pozitif"],
       priority: "high",
     },
     {
       id: "c2-f1",
       displayKind: "financial",
       timestamp: "11:15",
-      title: "€780 booking exposure identified",
-      detail: "Direct booking · Triple Room · 5 nights",
+      title: "€780 rezervasyon riski algılandı",
+      detail: "Direkt rezervasyon · Üç Kişilik Oda · 5 gece",
       financialEur: 780,
       recoveryProbability: 78,
       priority: "high",
@@ -125,15 +125,15 @@ const THREAD_CHRONOLOGY: Record<string, ChronologyBeat[]> = {
       id: "c2-r1",
       displayKind: "orchestration",
       timestamp: "11:16",
-      title: "Alternate payment recovery flow started",
-      actions: ["Alternative payment route generated", "Simplified checkout enabled", "Duty manager on standby if idle 12m"],
+      title: "Alternatif ödeme kurtarma akışı başladı",
+      actions: ["Alternatif ödeme yolu oluşturuldu", "Basitleştirilmiş ödeme etkin", "12 dk sessizlikte vardiya yöneticisi hazır"],
       priority: "high",
     },
     {
       id: "c2-g3",
       displayKind: "guest_message",
       timestamp: "11:18",
-      title: "Guest message",
+      title: "Misafir mesajı",
       quote: "Okay, I'm trying the new link now.",
       priority: "medium",
     },
@@ -141,8 +141,8 @@ const THREAD_CHRONOLOGY: Record<string, ChronologyBeat[]> = {
       id: "c2-m1",
       displayKind: "memory",
       timestamp: "11:16",
-      title: "Prior stay pattern applied",
-      detail: "July 2024 — split deposit succeeded · WhatsApp preferred · no complaint history",
+      title: "Önceki konaklama örüntüsü uygulandı",
+      detail: "Temmuz 2024 — bölünmüş depozito başarılı · WhatsApp tercihli · şikayet geçmişi yok",
       priority: "low",
     },
   ],
@@ -151,7 +151,7 @@ const THREAD_CHRONOLOGY: Record<string, ChronologyBeat[]> = {
       id: "c3-g1",
       displayKind: "guest_message",
       timestamp: "08:38",
-      title: "Guest message",
+      title: "Misafir mesajı",
       quote: "Your policy says free cancellation until 7 days — I am inside that window.",
       priority: "high",
     },
@@ -159,16 +159,16 @@ const THREAD_CHRONOLOGY: Record<string, ChronologyBeat[]> = {
       id: "c3-i1",
       displayKind: "ai_interpretation",
       timestamp: "08:39",
-      title: "Cancellation risk on VIP booking",
-      detail: "Policy dispute · high emotional tone · €2,180 at stake.",
-      signals: ["VIP segment", "Cancellation language explicit", "Policy edge case"],
+      title: "VIP rezervasyonda iptal riski",
+      detail: "Politika anlaşmazlığı · yüksek duygusal ton · €2.180 riskte.",
+      signals: ["VIP segment", "Açık iptal dili", "Politika sınır durumu"],
       priority: "high",
     },
     {
       id: "c3-f1",
       displayKind: "financial",
       timestamp: "08:39",
-      title: "€2,180 Deluxe Suite exposure",
+      title: "€2.180 Deluxe Suite riski",
       financialEur: 2180,
       recoveryProbability: 88,
       priority: "high",
@@ -177,15 +177,15 @@ const THREAD_CHRONOLOGY: Record<string, ChronologyBeat[]> = {
       id: "c3-r1",
       displayKind: "orchestration",
       timestamp: "08:42",
-      title: "Front desk takeover initiated",
-      actions: ["Maria L. joined with full booking context", "Policy exception drafted", "Guest kept on Instagram thread"],
+      title: "Resepsiyon devri başlatıldı",
+      actions: ["Maria L. tam rezervasyon bağlamıyla katıldı", "Politika istisnası hazırlandı", "Misafir Instagram görüşmesinde tutuldu"],
       priority: "high",
     },
     {
       id: "c3-g2",
       displayKind: "guest_message",
       timestamp: "08:48",
-      title: "Guest message",
+      title: "Misafir mesajı",
       quote: "Thank you — that works. Please confirm the suite for Aug 12.",
       priority: "medium",
     },
@@ -193,8 +193,8 @@ const THREAD_CHRONOLOGY: Record<string, ChronologyBeat[]> = {
       id: "c3-o1",
       displayKind: "outcome",
       timestamp: "08:52",
-      title: "Booking secured",
-      detail: "€2,180 recovered into direct pipeline · VIP retained",
+      title: "Rezervasyon güvenceye alındı",
+      detail: "€2.180 direkt rezervasyon sürecine döndü · VIP misafir korundu",
       financialEur: 2180,
       priority: "high",
     },
@@ -204,7 +204,7 @@ const THREAD_CHRONOLOGY: Record<string, ChronologyBeat[]> = {
       id: "c4-g1",
       displayKind: "guest_message",
       timestamp: "09:41",
-      title: "Guest message",
+      title: "Misafir mesajı",
       quote: "Confirmed — see you Jun 15.",
       priority: "medium",
     },
@@ -212,23 +212,23 @@ const THREAD_CHRONOLOGY: Record<string, ChronologyBeat[]> = {
       id: "c4-i1",
       displayKind: "ai_interpretation",
       timestamp: "09:55",
-      title: "Post-booking upsell window open",
-      detail: "Guest previously accepts late checkout bundles.",
+      title: "Rezervasyon sonrası ek satış fırsatı açık",
+      detail: "Misafir geçmişte geç çıkış paketlerini kabul etmiş.",
       priority: "medium",
     },
     {
       id: "c4-r1",
       displayKind: "orchestration",
       timestamp: "10:00",
-      title: "Late checkout + breakfast bundle offered",
-      actions: ["€95 ADR uplift quoted", "Aligned to prior stay preferences"],
+      title: "Geç çıkış + kahvaltı paketi önerildi",
+      actions: ["€95 ADR artışı teklif edildi", "Önceki konaklama tercihlerine uyarlandı"],
       priority: "medium",
     },
     {
       id: "c4-g2",
       displayKind: "guest_message",
       timestamp: "10:02",
-      title: "Guest message",
+      title: "Misafir mesajı",
       quote: "Yes, add the late checkout — thank you.",
       priority: "medium",
     },
@@ -236,8 +236,8 @@ const THREAD_CHRONOLOGY: Record<string, ChronologyBeat[]> = {
       id: "c4-o1",
       displayKind: "outcome",
       timestamp: "10:02",
-      title: "Upsell accepted",
-      detail: "€95 additional revenue on confirmed stay",
+      title: "Ek satış kabul edildi",
+      detail: "Onaylı konaklamada €95 ek gelir",
       financialEur: 95,
       priority: "high",
     },
@@ -246,36 +246,36 @@ const THREAD_CHRONOLOGY: Record<string, ChronologyBeat[]> = {
     {
       id: "c1-g1",
       displayKind: "guest_message",
-      timestamp: "2m ago",
-      title: "Guest message",
+      timestamp: "2 dk önce",
+      title: "Misafir mesajı",
       quote: "15-20 Temmuz arası çift kişilik odanız müsait mi?",
       priority: "medium",
     },
     {
       id: "c1-i1",
       displayKind: "ai_interpretation",
-      timestamp: "1m ago",
-      title: "New date inquiry — direct channel",
-      detail: "Availability check in progress · Turkish preferred.",
+      timestamp: "1 dk önce",
+      title: "Yeni tarih talebi — direkt kanal",
+      detail: "Uygunluk kontrolü devam ediyor · Türkçe tercihli.",
       priority: "medium",
     },
     {
       id: "c1-r1",
       displayKind: "orchestration",
-      timestamp: "Now",
-      title: "Quote preparation",
-      actions: ["Checking Jul 15–20 double availability", "Rate for direct WhatsApp close"],
+      timestamp: "Şimdi",
+      title: "Teklif hazırlanıyor",
+      actions: ["15–20 Tem çift kişilik oda uygunluğu kontrol ediliyor", "Direkt WhatsApp kapanışı için fiyat"],
       priority: "medium",
     },
   ],
 };
 
 const STATUS_REMAP: Record<string, OperationalStatusLabel> = {
-  "DIRECT CONVERSION": "DIRECT BOOKING",
-  "VIP MEMORY": "VIP GUEST",
-  "PRIORITY PIPELINE": "NEW INQUIRY",
-  "RUNTIME STABLE": "MONITORING",
-  "HUMAN ASSISTED": "STAFF ASSISTING",
+  "DIRECT CONVERSION": "DİREKT REZERVASYON",
+  "VIP MEMORY": "VIP MİSAFİR",
+  "PRIORITY PIPELINE": "YENİ TALEP",
+  "RUNTIME STABLE": "İZLEMEDE",
+  "HUMAN ASSISTED": "OPERATÖR DESTEKLİ",
 };
 
 export function deriveOperationalStatuses(
@@ -286,21 +286,21 @@ export function deriveOperationalStatuses(
   const statuses: OperationalStatusLabel[] = [];
   const f = conversation.flags;
 
-  if (f.paymentRisk) statuses.push("PAYMENT FRICTION");
-  if (f.recoveryActive || journey?.status === "active") statuses.push("RECOVERY ACTIVE");
-  if (guest?.segment === "vip" || f.vipEscalation || f.vipHistory) statuses.push("VIP GUEST");
-  if (f.humanTakeover) statuses.push("STAFF ASSISTING");
-  if (f.otaConversion) statuses.push("DIRECT BOOKING");
-  if (f.directBookingCandidate) statuses.push("DIRECT BOOKING");
+  if (f.paymentRisk) statuses.push("ÖDEME SORUNU");
+  if (f.recoveryActive || journey?.status === "active") statuses.push("KURTARMA AKTİF");
+  if (guest?.segment === "vip" || f.vipEscalation || f.vipHistory) statuses.push("VIP MİSAFİR");
+  if (f.humanTakeover) statuses.push("OPERATÖR DESTEKLİ");
+  if (f.otaConversion) statuses.push("DİREKT REZERVASYON");
+  if (f.directBookingCandidate) statuses.push("DİREKT REZERVASYON");
   if (conversation.revenueExposureEur >= 1500 || (guest?.lifetimeValueEur ?? 0) >= 3000) {
-    statuses.push("HIGH VALUE");
+    statuses.push("YÜKSEK DEĞER");
   }
-  if (f.priorRiskDetected && !f.recoveryActive) statuses.push("ESCALATION RISK");
+  if (f.priorRiskDetected && !f.recoveryActive) statuses.push("MÜDAHALE RİSKİ");
   if (conversation.status === "ai_active" && conversation.unread > 0 && !f.paymentRisk) {
-    statuses.push("NEW INQUIRY");
+    statuses.push("YENİ TALEP");
   }
-  if (guest?.intelligence.orchestrationRiskLevel === "high") statuses.push("ESCALATION RISK");
-  if (statuses.length === 0) statuses.push("MONITORING");
+  if (guest?.intelligence.orchestrationRiskLevel === "high") statuses.push("MÜDAHALE RİSKİ");
+  if (statuses.length === 0) statuses.push("İZLEMEDE");
 
   return [...new Set(statuses)];
 }
@@ -314,65 +314,65 @@ export function deriveGuestRuntimeSignals(
   const behavioral: string[] = [];
 
   if (conversation.flags.paymentRisk) {
-    behavioral.push("Hesitation rising");
-    behavioral.push("Asked about payment twice");
+    behavioral.push("Kararsızlık artıyor");
+    behavioral.push("Ödeme iki kez soruldu");
   }
   if (conversation.flags.recoveryActive) {
-    behavioral.push("Waiting on new payment link");
-    behavioral.push("Booking intent still positive");
+    behavioral.push("Yeni ödeme bağlantısı bekleniyor");
+    behavioral.push("Rezervasyon niyeti hâlâ pozitif");
   }
   if (conversation.flags.humanTakeover) {
-    behavioral.push("Frustrated tone");
-    behavioral.push("Policy dispute active");
+    behavioral.push("Gergin ton");
+    behavioral.push("Politika anlaşmazlığı aktif");
   }
   if (conversation.unread > 0) {
-    behavioral.push("Awaiting hotel reply");
+    behavioral.push("Otel yanıtı bekliyor");
   }
   if (intel && intel.orchestrationRiskLevel === "high") {
-    behavioral.push("May abandon if unresolved");
+    behavioral.push("Çözülmezse vazgeçebilir");
   }
   if (behavioral.length === 0) {
-    behavioral.push("Calm engagement");
-    behavioral.push("Booking confidence steady");
+    behavioral.push("Sakin etkileşim");
+    behavioral.push("Rezervasyon güveni stabil");
   }
 
   const financial: string[] = [];
   if (conversation.revenueExposureEur > 0) {
-    financial.push(`${formatCompactEur(conversation.revenueExposureEur)} at risk`);
+    financial.push(`${formatCompactEur(conversation.revenueExposureEur)} risk altında`);
   }
   if (guest?.segment === "ota_origin" || conversation.flags.otaConversion) {
-    financial.push("€212 commission save possible");
+    financial.push("€212 komisyon tasarrufu mümkün");
   }
   if ((guest?.lifetimeValueEur ?? 0) >= 2500) {
-    financial.push("High-value repeat guest");
+    financial.push("Yüksek değerli tekrar misafir");
   }
   if (intel && intel.directBookingPotential >= 80) {
-    financial.push(`Strong direct-booking fit`);
+    financial.push("Güçlü direkt rezervasyon uyumu");
   }
   if (conversation.attributions.some((a) => a.kind === "ai_upsell")) {
-    financial.push("Upsell window open");
+    financial.push("Ek satış fırsatı açık");
   }
   if (financial.length === 0 && guest) {
-    financial.push(`${formatCompactEur(guest.aiInfluencedRevenueEur)} influenced revenue`);
+    financial.push(`${formatCompactEur(guest.aiInfluencedRevenueEur)} AI etkili gelir`);
   }
 
   const situation: string[] = [];
   if (conversation.flags.recoveryActive || journey?.status === "active") {
-    situation.push("Recovery flow in progress");
+    situation.push("Kurtarma akışı devam ediyor");
   }
   if (conversation.flags.humanTakeover) {
-    situation.push("Staff-led close");
+    situation.push("Operatör kapanışı yönetiyor");
   } else if (intel?.orchestrationRiskLevel === "low" && conversation.flags.paymentRisk) {
-    situation.push("Escalation not required yet");
+    situation.push("Henüz yükseltme gerekmiyor");
   }
   if (conversation.flags.memoryAttached && guest) {
-    situation.push("Guest history available");
+    situation.push("Misafir geçmişi mevcut");
   }
   if (intel && conversation.flags.paymentRisk) {
-    situation.push(`${intel.recoverySuccessRatio}% recovery likelihood`);
+    situation.push(`%${intel.recoverySuccessRatio} kurtarma olasılığı`);
   }
   if (situation.length === 0) {
-    situation.push("Standard booking flow");
+    situation.push("Standart rezervasyon akışı");
   }
 
   return {
@@ -388,19 +388,19 @@ export function buildPropagationCausality(
   guest?: Guest
 ): PropagationCausalityStep[] {
   const steps: PropagationCausalityStep[] = [
-    { label: "Payment failed", active: conversation.flags.paymentRisk },
-    { label: "Guest hesitation", active: conversation.flags.paymentRisk || conversation.flags.priorRiskDetected },
-    { label: "Booking at risk", active: conversation.flags.recoveryActive || conversation.revenueExposureEur > 0 },
-    { label: "Revenue exposure", active: conversation.revenueExposureEur > 0 },
-    { label: "Escalation risk", active: guest?.intelligence.orchestrationRiskLevel === "high" || conversation.flags.vipEscalation },
-    { label: "Recovery in progress", active: conversation.flags.recoveryActive },
+    { label: "Ödeme başarısız", active: conversation.flags.paymentRisk },
+    { label: "Misafir kararsızlığı", active: conversation.flags.paymentRisk || conversation.flags.priorRiskDetected },
+    { label: "Rezervasyon riskte", active: conversation.flags.recoveryActive || conversation.revenueExposureEur > 0 },
+    { label: "Gelir riski", active: conversation.revenueExposureEur > 0 },
+    { label: "Müdahale riski", active: guest?.intelligence.orchestrationRiskLevel === "high" || conversation.flags.vipEscalation },
+    { label: "Kurtarma devam ediyor", active: conversation.flags.recoveryActive },
   ];
   if (!steps.some((s) => s.active)) {
     return [
-      { label: "Guest inquiry", active: true },
-      { label: "Quote / availability", active: true },
-      { label: "Booking pipeline", active: true },
-      { label: "Stable", active: true },
+      { label: "Misafir talebi", active: true },
+      { label: "Teklif / uygunluk", active: true },
+      { label: "Rezervasyon süreci", active: true },
+      { label: "Stabil", active: true },
     ];
   }
   return steps;
@@ -533,8 +533,8 @@ function buildFallbackChronology(
       id: `guest-msg-${conversation.id}`,
       displayKind: "guest_message",
       priority: "high",
-      timestamp: conversation.time.replace(" ago", "") || "Now",
-      title: "Guest message",
+      timestamp: conversation.time.replace(" ago", "") || "Şimdi",
+      title: "Misafir mesajı",
       quote: conversation.lastMessage,
     });
   }
@@ -565,8 +565,8 @@ function buildFallbackChronology(
       displayKind: "system",
       priority: "low",
       timestamp: conversation.time,
-      title: "Monitoring booking thread",
-      detail: "No active risk on this conversation.",
+      title: "Rezervasyon görüşmesi izleniyor",
+      detail: "Bu görüşmede aktif risk yok.",
     });
   }
 
@@ -586,13 +586,13 @@ function phaseToDisplayKind(phase: RecoveryFlow["steps"][number]["phase"]): Time
 
 function humanizeJourneyStep(title: string, phase: RecoveryFlow["steps"][number]["phase"]): string {
   const replacements: [RegExp, string][] = [
-    [/payment risk detected/i, "Payment failure on booking"],
-    [/ai recovery sequence/i, "Alternate payment recovery flow started"],
-    [/recovery workflow armed/i, "Alternate payment recovery flow started"],
-    [/ops notified/i, "Duty manager notified"],
-    [/human takeover/i, "Front desk takeover initiated"],
-    [/booking rescued|revenue secured/i, "Booking secured"],
-    [/vip escalation/i, "VIP incident — staff assist"],
+    [/payment risk detected/i, "Rezervasyonda ödeme başarısızlığı"],
+    [/ai recovery sequence/i, "Alternatif ödeme kurtarma akışı başladı"],
+    [/recovery workflow armed/i, "Alternatif ödeme kurtarma akışı başladı"],
+    [/ops notified/i, "Vardiya yöneticisi bilgilendirildi"],
+    [/human takeover/i, "Resepsiyon devri başlatıldı"],
+    [/booking rescued|revenue secured/i, "Rezervasyon güvenceye alındı"],
+    [/vip escalation/i, "VIP durum — operatör desteği"],
   ];
   let out = title;
   for (const [pattern, replacement] of replacements) {

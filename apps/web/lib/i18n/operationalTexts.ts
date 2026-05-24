@@ -137,7 +137,7 @@ export const operationalTexts = {
     loadingThread: "Bu görüşme için mesaj geçmişi yükleniyor…",
     emptyQueue: "Henüz aktif misafir konuşması yok.",
     emptyQueueDetail: "Yeni mesajlar burada görünecek.",
-    emptyReservations: "Aktif rezervasyon pipeline'ı boş.",
+    emptyReservations: "Aktif rezervasyon süreci boş.",
     emptyReservationsDetail:
       "Yeni talepler ve teklifler onaylandıkça bu ekranda görünür.",
     emptyGuests: "Misafir profilleri operasyon geçmişi oluştukça görünür.",

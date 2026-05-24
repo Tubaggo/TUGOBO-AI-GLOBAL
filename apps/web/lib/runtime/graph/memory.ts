@@ -5,13 +5,13 @@ import type { OperationalEventContext } from "../events/types";
 export const GUEST_MEMORY_SEEDS: Record<string, { memory: GuestMemory; intelligence: GuestIntelligence }> = {
   g1: {
     memory: {
-      operational: ["VIP segment · policy-sensitive", "Repeat high-LTV guest"],
-      financial: ["€2,180 VIP rescue attributed", "Cancellation risk historically high on policy disputes"],
-      orchestration: ["Human takeover succeeded Aug 12", "AI context preserved across handoff"],
-      preferences: ["Instagram primary channel", "Russian language preference"],
-      escalationHistory: ["VIP escalation Aug 12 · resolved by human override"],
-      recoveryHistory: ["Payment friction not primary risk — policy edge cases"],
-      aiNotes: ["Sensitive to cancellation policy wording", "Responds to empathetic tone + exception framing"],
+      operational: ["VIP segment · politika hassas", "Tekrar gelen yüksek değerli misafir"],
+      financial: ["€2.180 VIP kurtarma katkısı", "Politika anlaşmazlıklarında tarihsel iptal riski yüksek"],
+      orchestration: ["Operatör devri 12 Ağu başarılı", "AI bağlamı devir boyunca korundu"],
+      preferences: ["Instagram ana kanal", "Rusça dil tercihi"],
+      escalationHistory: ["VIP yükseltme 12 Ağu · operatör müdahalesiyle çözüldü"],
+      recoveryHistory: ["Ödeme sorunu birincil risk değil — politika sınır durumları"],
+      aiNotes: ["İptal politikası diline hassas", "Empatik ton + istisna çerçevesine yanıt veriyor"],
     },
     intelligence: {
       orchestrationRiskLevel: "medium",
@@ -25,13 +25,13 @@ export const GUEST_MEMORY_SEEDS: Record<string, { memory: GuestMemory; intellige
   },
   g2: {
     memory: {
-      operational: ["Active payment recovery · Triple Room Jun 28"],
-      financial: ["€780 exposure on current quote", "Prior quotes completed via WhatsApp"],
-      orchestration: ["Recovery workflow active", "Alternate link issued"],
-      preferences: ["Prefers WhatsApp over email", "German language · direct channel"],
+      operational: ["Aktif ödeme kurtarma · Üç Kişilik Oda 28 Haz"],
+      financial: ["Güncel teklifte €780 risk", "Önceki teklifler WhatsApp üzerinden tamamlandı"],
+      orchestration: ["Kurtarma akışı aktif", "Alternatif bağlantı gönderildi"],
+      preferences: ["E-posta yerine WhatsApp tercih ediyor", "Almanca · direkt kanal"],
       escalationHistory: [],
-      recoveryHistory: ["Previous recovery succeeded with split payment", "Card decline pattern detected"],
-      aiNotes: ["High recovery probability when split deposit offered", "Responds within 15m on WhatsApp"],
+      recoveryHistory: ["Önceki kurtarma parçalı ödemeyle başarılı oldu", "Kart reddi örüntüsü algılandı"],
+      aiNotes: ["Depozito bölme önerildiğinde kurtarma olasılığı yüksek", "WhatsApp'ta 15 dk içinde yanıtlıyor"],
     },
     intelligence: {
       orchestrationRiskLevel: "high",
@@ -45,13 +45,13 @@ export const GUEST_MEMORY_SEEDS: Record<string, { memory: GuestMemory; intellige
   },
   g3: {
     memory: {
-      operational: ["OTA-origin · direct conversion candidate"],
-      financial: ["€212 commission avoided on last close", "Superior Double Aug 2–6"],
-      orchestration: ["OTA → direct workflow completed"],
-      preferences: ["Booking.com origin · prefers rate parity offers"],
+      operational: ["OTA kaynaklı · direkt dönüşüm adayı"],
+      financial: ["Son kapanışta €212 komisyon önlendi", "Superior Çift Kişilik Oda 2–6 Ağu"],
+      orchestration: ["OTA → direkt akış tamamlandı"],
+      preferences: ["Booking.com kaynaklı · fiyat eşitliği tekliflerini tercih ediyor"],
       escalationHistory: [],
-      recoveryHistory: ["OTA conversion workflow succeeded"],
-      aiNotes: ["Repeat direct-booking candidate", "Loyalty perk increases close rate"],
+      recoveryHistory: ["OTA dönüşüm akışı başarılı oldu"],
+      aiNotes: ["Tekrar direkt rezervasyon adayı", "Sadakat avantajı kapanış oranını artırıyor"],
     },
     intelligence: {
       orchestrationRiskLevel: "low",
@@ -65,13 +65,13 @@ export const GUEST_MEMORY_SEEDS: Record<string, { memory: GuestMemory; intellige
   },
   g4: {
     memory: {
-      operational: ["Confirmed guest · upsell receptive"],
-      financial: ["€95 ADR uplift post-confirmation", "Deluxe Suite Jun 15–20"],
-      orchestration: ["Resolved thread · upsell bundle accepted"],
-      preferences: ["Web channel · English", "Late checkout interest signaled"],
+      operational: ["Onaylı misafir · ek satışa açık"],
+      financial: ["Onay sonrası €95 ADR artışı", "Deluxe Suite 15–20 Haz"],
+      orchestration: ["Çözülmüş görüşme · ek satış paketi kabul edildi"],
+      preferences: ["Web kanalı · İngilizce", "Geç çıkış ilgisi sinyali verdi"],
       escalationHistory: [],
       recoveryHistory: [],
-      aiNotes: ["High upsell conversion probability", "Post-confirmation bundles perform well"],
+      aiNotes: ["Ek satış dönüşüm olasılığı yüksek", "Onay sonrası paketler iyi performans gösteriyor"],
     },
     intelligence: {
       orchestrationRiskLevel: "low",
@@ -79,7 +79,7 @@ export const GUEST_MEMORY_SEEDS: Record<string, { memory: GuestMemory; intellige
       recoverySuccessRatio: 95,
       loyaltyProbability: 88,
       directBookingPotential: 90,
-      operationalStatus: "Confirmed · upsell",
+      operationalStatus: "Onaylandı · ek satış",
       memoryAttached: true,
     },
   },
@@ -118,7 +118,7 @@ function defaultIntelligence(): GuestIntelligence {
     recoverySuccessRatio: 70,
     loyaltyProbability: 60,
     directBookingPotential: 50,
-    operationalStatus: "Monitoring",
+    operationalStatus: "İzlemede",
     memoryAttached: false,
   };
 }
@@ -128,34 +128,34 @@ const MEMORY_DELTAS: Partial<
 > = {
   PAYMENT_FAILED: (m, ctx) => ({
     ...m,
-    operational: [`Payment risk · €${ctx.amountEur ?? 780} exposure`, ...m.operational].slice(0, 6),
-    recoveryHistory: ["Payment failure detected — recovery pattern armed", ...m.recoveryHistory].slice(0, 5),
-    aiNotes: ["Orchestration weighted toward alternate payment + split deposit", ...m.aiNotes].slice(0, 5),
+    operational: [`Ödeme riski · €${ctx.amountEur ?? 780} risk`, ...m.operational].slice(0, 6),
+    recoveryHistory: ["Ödeme başarısızlığı algılandı — kurtarma örüntüsü hazır", ...m.recoveryHistory].slice(0, 5),
+    aiNotes: ["Süreç alternatif ödeme + depozito bölmeye yönlendirildi", ...m.aiNotes].slice(0, 5),
   }),
   RECOVERY_SUCCESS: (m) => ({
     ...m,
-    recoveryHistory: ["Recovery succeeded — pattern reinforced for future orchestration", ...m.recoveryHistory].slice(
+    recoveryHistory: ["Kurtarma başarılı — örüntü sonraki operasyonlar için güçlendirildi", ...m.recoveryHistory].slice(
       0,
       5
     ),
-    financial: ["Exposure cleared · influenced revenue updated", ...m.financial].slice(0, 6),
+    financial: ["Risk kapatıldı · AI etkili gelir güncellendi", ...m.financial].slice(0, 6),
   }),
   VIP_ESCALATION: (m, ctx) => ({
     ...m,
     escalationHistory: [
-      `VIP escalation · exposure €${ctx.amountEur ?? 2180}`,
+      `VIP yükseltme · risk €${ctx.amountEur ?? 2180}`,
       ...m.escalationHistory,
     ].slice(0, 5),
-    aiNotes: ["Human takeover pathway prioritized", ...m.aiNotes].slice(0, 5),
+    aiNotes: ["Operatör devri yolu önceliklendirildi", ...m.aiNotes].slice(0, 5),
   }),
   UPSELL_ACCEPTED: (m, ctx) => ({
     ...m,
-    financial: [`ADR uplift €${ctx.amountEur ?? 95} recorded`, ...m.financial].slice(0, 6),
+    financial: [`ADR artışı €${ctx.amountEur ?? 95} kaydedildi`, ...m.financial].slice(0, 6),
   }),
   OTA_CONVERSION: (m) => ({
     ...m,
-    orchestration: ["OTA → direct conversion completed", ...m.orchestration].slice(0, 5),
-    aiNotes: ["Direct booking potential confirmed", ...m.aiNotes].slice(0, 5),
+    orchestration: ["OTA → direkt dönüşüm tamamlandı", ...m.orchestration].slice(0, 5),
+    aiNotes: ["Direkt rezervasyon potansiyeli doğrulandı", ...m.aiNotes].slice(0, 5),
   }),
 };
 
@@ -184,7 +184,7 @@ function applyIntelligenceDelta(
         ...intel,
         orchestrationRiskLevel: "high",
         aiConfidenceScore: Math.max(70, intel.aiConfidenceScore - 4),
-        operationalStatus: "Payment risk",
+        operationalStatus: "Ödeme riski",
       };
     case "RECOVERY_SUCCESS":
       return {
@@ -192,13 +192,13 @@ function applyIntelligenceDelta(
         orchestrationRiskLevel: "low",
         recoverySuccessRatio: Math.min(98, intel.recoverySuccessRatio + 6),
         aiConfidenceScore: Math.min(98, intel.aiConfidenceScore + 3),
-        operationalStatus: "Recovered",
+        operationalStatus: "Kurtarıldı",
       };
     case "VIP_ESCALATION":
       return {
         ...intel,
         orchestrationRiskLevel: "critical",
-        operationalStatus: "VIP escalation",
+        operationalStatus: "VIP yükseltme",
       };
     case "OTA_CONVERSION":
       return {

@@ -77,7 +77,7 @@ export function AlertCenter() {
             )}
           </div>
           <p className="border-t border-white/[0.05] px-4 py-2 text-center text-[10px] text-white/25">
-            Graph propagation · memory · orchestration
+            Etki zinciri · misafir hafızası · operasyon sonucu
           </p>
         </div>
       ) : null}

@@ -42,8 +42,16 @@ export async function POST(req: Request, context: RouteContext) {
     });
     return NextResponse.json({ ok: true, reservation });
   } catch (err) {
+    const code = err instanceof Error ? err.message : "unknown_error";
+    if (code === "conversation_not_found") {
+      return NextResponse.json({ ok: false, error: "conversation_not_found" }, { status: 404 });
+    }
+    if (code === "database_not_configured") {
+      return NextResponse.json({ ok: false, error: "service_unavailable" }, { status: 503 });
+    }
+
     console.error("[RESERVATION_CREATE]", {
-      error: err instanceof Error ? err.message : String(err),
+      error: code,
       conversationId,
     });
     return NextResponse.json({ ok: false, error: "create_failed" }, { status: 500 });

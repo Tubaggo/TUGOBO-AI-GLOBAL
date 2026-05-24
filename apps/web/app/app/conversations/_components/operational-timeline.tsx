@@ -46,7 +46,7 @@ const KIND_META: Record<
     border: "border-cyan-500/15",
   },
   memory: {
-    label: "Guest history",
+    label: "Misafir geçmişi",
     icon: Brain,
     accent: "text-violet-400/80",
     border: "border-violet-500/10",
@@ -89,7 +89,7 @@ export function OperationalTimeline({ events }: { events: OperationalTimelineEve
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35">
             Conversation chronology
           </p>
-          <h3 className="text-sm font-semibold text-white/90">Guest flow · revenue · recovery</h3>
+          <h3 className="text-sm font-semibold text-white/90">Misafir akışı · gelir · kurtarma</h3>
         </div>
         <span className="text-[10px] text-white/28">{visible.length} events</span>
       </div>
@@ -100,7 +100,7 @@ export function OperationalTimeline({ events }: { events: OperationalTimelineEve
       </div>
       {events.some((e) => e.priority === "low" && e.displayKind !== "guest_message") ? (
         <p className="mt-3 text-[10px] text-white/22">
-          Guest history and pipeline updates appear in the impact panel below.
+          Misafir geçmişi ve süreç güncellemeleri aşağıdaki etki panelinde görünür.
         </p>
       ) : null}
     </section>

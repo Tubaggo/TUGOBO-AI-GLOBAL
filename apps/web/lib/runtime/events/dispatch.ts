@@ -13,7 +13,7 @@ import type {
 import { applyGraphLayer } from "../graph/enrich";
 import type { OperationalEventContext, OperationalEventType } from "./types";
 
-const ts = () => "Just now";
+const ts = () => "Şimdi";
 const uid = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 function defaultContext(type: OperationalEventType): OperationalEventContext {
@@ -24,7 +24,7 @@ function defaultContext(type: OperationalEventType): OperationalEventContext {
       guestId: "g2",
       reservationId: "or2",
       conversationId: "c2",
-      roomLabel: "Triple Room · Jun 28–Jul 3",
+      roomLabel: "Üç Kişilik Oda · 28 Haz–3 Tem",
     },
     RECOVERY_STARTED: {
       amountEur: 780,
@@ -32,7 +32,7 @@ function defaultContext(type: OperationalEventType): OperationalEventContext {
       guestId: "g2",
       reservationId: "or2",
       conversationId: "c2",
-      roomLabel: "Triple Room · Jun 28–Jul 3",
+      roomLabel: "Üç Kişilik Oda · 28 Haz–3 Tem",
     },
     RECOVERY_SUCCESS: {
       amountEur: 780,
@@ -83,7 +83,7 @@ export function dispatchOperationalEvent(
 ): OperationalState {
   const ctx = { ...defaultContext(type), ...context };
   const amount = ctx.amountEur ?? 0;
-  const guest = ctx.guestLabel ?? "Guest";
+  const guest = ctx.guestLabel ?? "Misafir";
 
   const revenue = { ...state.revenue };
   const aiImpact = { ...state.aiImpact };
@@ -127,23 +127,23 @@ export function dispatchOperationalEvent(
         revenueAtRiskEur: amount || r.bookingValueEur,
         attributions: upsertAttribution(r.attributions, {
           kind: "payment_recovery",
-          label: "Payment recovery in progress",
+          label: "Ödeme kurtarma devam ediyor",
           amountEur: amount || r.bookingValueEur,
           aiContributed: true,
-          detail: "Alternate link issued",
+          detail: "Alternatif bağlantı gönderildi",
         }),
         timeline: [
           ...r.timeline,
           {
             stage: "payment_risk",
-            label: "Payment failed",
+            label: "Ödeme başarısız",
             timestamp: ts(),
             financialImpactEur: -(amount || r.bookingValueEur),
             actor: "system",
           },
           {
             stage: "recovery",
-            label: "AI recovery active",
+            label: "AI kurtarma aktif",
             timestamp: ts(),
             actor: "ai",
           },
@@ -153,12 +153,12 @@ export function dispatchOperationalEvent(
       threads = patchThread(threads, ctx.conversationId, (t) => ({
         ...t,
         revenueExposureEur: amount || t.revenueExposureEur,
-        lastMessage: "Payment failed — AI recovery sequence initiated",
+        lastMessage: "Ödeme başarısız — AI kurtarma akışı başlatıldı",
         time: ts(),
         flags: { ...t.flags, paymentRisk: true, recoveryActive: true },
         attributions: upsertAttribution(t.attributions, {
           kind: "payment_recovery",
-          label: "Payment at risk",
+          label: "Ödeme riskte",
           amountEur: amount,
           aiContributed: true,
         }),
@@ -168,7 +168,7 @@ export function dispatchOperationalEvent(
         ...g,
         lastAttribution: {
           kind: "payment_recovery",
-          label: "Payment risk",
+          label: "Ödeme riski",
           amountEur: amount,
           aiContributed: true,
         },
@@ -179,27 +179,27 @@ export function dispatchOperationalEvent(
           id: uid("rj"),
           kind: "failed_payment",
           guestLabel: guest,
-          roomLabel: ctx.roomLabel ?? "Room · dates TBC",
+          roomLabel: ctx.roomLabel ?? "Oda · tarihler netleşmedi",
           status: "active",
           bookingValueEur: amount || 780,
           revenueSavedEur: 0,
           reservationId: ctx.reservationId,
           conversationId: ctx.conversationId,
-          aiRationale: "Payment friction — alternate link and deposit split issued.",
+          aiRationale: "Ödeme sorunu — alternatif bağlantı ve depozito bölme gönderildi.",
           steps: [
             {
               id: uid("s"),
               phase: "risk",
-              title: "Payment risk detected",
-              detail: `€${amount || 780} at risk`,
+              title: "Ödeme riski algılandı",
+              detail: `€${amount || 780} risk altında`,
               timestamp: ts(),
               revenueDeltaEur: -(amount || 780),
             },
             {
               id: uid("s"),
               phase: "ai_intervention",
-              title: "AI recovery sequence",
-              detail: "Alternate payment link sent",
+              title: "AI kurtarma akışı",
+              detail: "Alternatif ödeme bağlantısı gönderildi",
               timestamp: ts(),
             },
           ],
@@ -221,7 +221,7 @@ export function dispatchOperationalEvent(
       threads = patchThread(threads, ctx.conversationId, (t) => ({
         ...t,
         flags: { ...t.flags, recoveryActive: true },
-        lastMessage: "Recovery workflow started — ops layer synchronized",
+        lastMessage: "Kurtarma akışı başladı — operasyon katmanı eşitlendi",
         time: ts(),
       }));
       break;
@@ -247,7 +247,7 @@ export function dispatchOperationalEvent(
         revenueAtRiskEur: 0,
         attributions: upsertAttribution(r.attributions, {
           kind: "payment_recovery",
-          label: "Payment recovered",
+          label: "Ödeme kurtarıldı",
           amountEur: recovered,
           aiContributed: true,
         }),
@@ -255,7 +255,7 @@ export function dispatchOperationalEvent(
           ...r.timeline,
           {
             stage: "confirmation",
-            label: "Booking confirmed",
+            label: "Rezervasyon onaylandı",
             timestamp: ts(),
             financialImpactEur: recovered,
             actor: "system",
@@ -267,7 +267,7 @@ export function dispatchOperationalEvent(
         ...t,
         revenueExposureEur: 0,
         status: "resolved",
-        lastMessage: "Payment confirmed — booking secured across pipeline",
+        lastMessage: "Ödeme onaylandı — rezervasyon güvence altında",
         time: ts(),
         flags: {
           ...t.flags,
@@ -283,7 +283,7 @@ export function dispatchOperationalEvent(
         aiInfluencedRevenueEur: g.aiInfluencedRevenueEur + recovered,
         lastAttribution: {
           kind: "payment_recovery",
-          label: "Recovery success",
+          label: "Kurtarma başarılı",
           amountEur: recovered,
           aiContributed: true,
         },
@@ -300,8 +300,8 @@ export function dispatchOperationalEvent(
                 {
                   id: uid("s"),
                   phase: "confirmation" as RecoveryJourneyStep["phase"],
-                  title: "Recovery complete",
-                  detail: `€${recovered} secured`,
+                  title: "Kurtarma tamamlandı",
+                  detail: `€${recovered} güvence altında`,
                   timestamp: ts(),
                   revenueDeltaEur: recovered,
                 },
@@ -324,7 +324,7 @@ export function dispatchOperationalEvent(
         currentStage: "upsell",
         attributions: upsertAttribution(r.attributions, {
           kind: "ai_upsell",
-          label: "ADR uplift",
+          label: "ADR artışı",
           amountEur: upsell,
           aiContributed: true,
         }),
@@ -332,7 +332,7 @@ export function dispatchOperationalEvent(
           ...r.timeline,
           {
             stage: "upsell",
-            label: "Upsell accepted",
+            label: "Ek satış kabul edildi",
             timestamp: ts(),
             financialImpactEur: upsell,
             actor: "ai",
@@ -342,11 +342,11 @@ export function dispatchOperationalEvent(
 
       threads = patchThread(threads, ctx.conversationId, (t) => ({
         ...t,
-        lastMessage: "Upsell bundle accepted — ADR uplift recorded",
+        lastMessage: "Ek satış paketi kabul edildi — ADR artışı kaydedildi",
         time: ts(),
         attributions: upsertAttribution(t.attributions, {
           kind: "ai_upsell",
-          label: "AI upsell",
+          label: "AI ek satış",
           amountEur: upsell,
           aiContributed: true,
         }),
@@ -358,7 +358,7 @@ export function dispatchOperationalEvent(
         lifetimeValueEur: g.lifetimeValueEur + upsell,
         lastAttribution: {
           kind: "ai_upsell",
-          label: "ADR uplift",
+          label: "ADR artışı",
           amountEur: upsell,
           aiContributed: true,
         },
@@ -381,12 +381,12 @@ export function dispatchOperationalEvent(
         ...t,
         revenueExposureEur: exposure,
         status: "human_takeover",
-        lastMessage: "VIP escalation — human takeover with AI context",
+        lastMessage: "VIP yükseltme — AI bağlamıyla operatör devri",
         time: ts(),
         flags: { ...t.flags, vipEscalation: true, humanTakeover: true },
         attributions: upsertAttribution(t.attributions, {
           kind: "vip_intervention",
-          label: "VIP escalation",
+          label: "VIP yükseltme",
           amountEur: exposure,
           aiContributed: true,
         }),
@@ -397,7 +397,7 @@ export function dispatchOperationalEvent(
         vipRescueCount: g.vipRescueCount + 1,
         lastAttribution: {
           kind: "vip_intervention",
-          label: "VIP escalation",
+          label: "VIP yükseltme",
           amountEur: exposure,
           aiContributed: true,
         },
@@ -421,7 +421,7 @@ export function dispatchOperationalEvent(
         aiInfluencedRevenueEur: g.aiInfluencedRevenueEur + commission,
         lastAttribution: {
           kind: "ota_commission",
-          label: "OTA → direct",
+          label: "OTA → direkt",
           amountEur: commission,
           aiContributed: true,
         },
@@ -429,12 +429,12 @@ export function dispatchOperationalEvent(
 
       threads = patchThread(threads, ctx.conversationId, (t) => ({
         ...t,
-        lastMessage: "OTA guest converted to direct — commission avoided",
+        lastMessage: "OTA misafiri direkt rezervasyona döndü — komisyon önlendi",
         time: ts(),
         flags: { ...t.flags, otaConversion: true },
         attributions: upsertAttribution(t.attributions, {
           kind: "ota_commission",
-          label: "OTA conversion",
+          label: "OTA dönüşümü",
           amountEur: commission,
           aiContributed: true,
         }),
@@ -444,18 +444,18 @@ export function dispatchOperationalEvent(
         id: uid("rj"),
         kind: "ota_to_direct",
         guestLabel: guest,
-        roomLabel: ctx.roomLabel ?? "Superior Double",
+        roomLabel: ctx.roomLabel ?? "Superior Çift Kişilik Oda",
         status: "recovered",
         bookingValueEur: booking,
         revenueSavedEur: commission,
         conversationId: ctx.conversationId,
-        aiRationale: "Direct rate match — commission retained in-house.",
+        aiRationale: "Direkt fiyat eşlemesi — komisyon içeride kaldı.",
         steps: [
           {
             id: uid("s"),
             phase: "recovery",
-            title: "Direct conversion",
-            detail: `€${commission} commission avoided`,
+            title: "Direkt dönüşüm",
+            detail: `€${commission} komisyon önlendi`,
             timestamp: ts(),
             revenueDeltaEur: commission,
           },
@@ -477,12 +477,12 @@ export function dispatchOperationalEvent(
         ...t,
         status: "human_takeover",
         revenueExposureEur: 0,
-        lastMessage: "Human takeover — assisted close with AI context preserved",
+        lastMessage: "Operatör devri — AI bağlamı korunarak destekli kapanış",
         time: ts(),
         flags: { ...t.flags, humanTakeover: true },
         attributions: upsertAttribution(t.attributions, {
           kind: "takeover_rescue",
-          label: "Human takeover rescue",
+          label: "Operatör devri kurtarması",
           amountEur: saved,
           aiContributed: false,
         }),
@@ -494,7 +494,7 @@ export function dispatchOperationalEvent(
         aiInfluencedRevenueEur: g.aiInfluencedRevenueEur + saved,
         lastAttribution: {
           kind: "takeover_rescue",
-          label: "Takeover rescue",
+          label: "Devralma kurtarması",
           amountEur: saved,
           aiContributed: false,
         },
@@ -563,7 +563,7 @@ function buildFeedItem(
   ctx: OperationalEventContext
 ): OperationsFeedItem | null {
   const amount = ctx.amountEur ?? 0;
-  const guest = ctx.guestLabel ?? "Guest";
+  const guest = ctx.guestLabel ?? "Misafir";
   const id = uid("f");
   const map: Record<OperationalEventType, OperationsFeedItem> = {
     PAYMENT_FAILED: {
@@ -604,7 +604,7 @@ function buildFeedItem(
     },
     UPSELL_ACCEPTED: {
       id,
-      title: "Upsell kabul edildi",
+      title: "Ek satış kabul edildi",
       meta: `${guest} · ek gelir kaydedildi`,
       time: ts(),
       tone: "border-l-blue-400/70 bg-blue-500/[0.04]",
@@ -661,12 +661,12 @@ function buildRevenueEvent(
   };
 
   const headlines: Partial<Record<OperationalEventType, string>> = {
-    RECOVERY_SUCCESS: `AI recovered €${amount.toLocaleString()} after payment friction`,
-    BOOKING_CONFIRMED: `Booking confirmed · €${amount.toLocaleString()} direct pipeline`,
-    HUMAN_TAKEOVER: `Human takeover secured €${amount.toLocaleString()}`,
-    OTA_CONVERSION: `OTA conversion retained €${amount} commission`,
-    UPSELL_ACCEPTED: `AI upsell generated €${amount} ADR uplift`,
-    VIP_ESCALATION: `VIP escalation · €${amount.toLocaleString()} exposure managed`,
+    RECOVERY_SUCCESS: `AI ödeme sorunundan sonra €${amount.toLocaleString()} kurtardı`,
+    BOOKING_CONFIRMED: `Rezervasyon onaylandı · €${amount.toLocaleString()} direkt süreç`,
+    HUMAN_TAKEOVER: `Operatör devri €${amount.toLocaleString()} güvenceye aldı`,
+    OTA_CONVERSION: `OTA dönüşümü €${amount} komisyonu korudu`,
+    UPSELL_ACCEPTED: `AI ek satış €${amount} ADR artışı sağladı`,
+    VIP_ESCALATION: `VIP yükseltme · €${amount.toLocaleString()} risk yönetildi`,
   };
 
   const headline = headlines[type];
@@ -675,7 +675,7 @@ function buildRevenueEvent(
   return {
     id: uid("st"),
     headline,
-    narrative: "Operational event propagated across overview, pipeline, guests, and audit.",
+    narrative: "Operasyon olayı genel bakış, rezervasyon süreci, misafirler ve denetime işlendi.",
     amountEur: amount,
     attribution: attribution[type],
     timestamp: ts(),
@@ -689,41 +689,41 @@ function buildAlert(
   ctx: OperationalEventContext
 ): OperationalAlert | null {
   const amount = ctx.amountEur;
-  const guest = ctx.guestLabel ?? "Guest";
+  const guest = ctx.guestLabel ?? "Misafir";
 
   const map: Partial<Record<OperationalEventType, Omit<OperationalAlert, "id" | "timestamp" | "read">>> = {
     PAYMENT_FAILED: {
-      title: "Payment risk detected",
-      detail: `${guest} · recovery workflow active`,
+      title: "Ödeme riski algılandı",
+      detail: `${guest} · kurtarma akışı aktif`,
       severity: "warning",
       financialEur: amount,
       reservationId: ctx.reservationId,
       guestLabel: guest,
     },
     RECOVERY_SUCCESS: {
-      title: "Recovery success",
-      detail: `${guest} · revenue secured · exposure cleared`,
+      title: "Kurtarma başarılı",
+      detail: `${guest} · gelir güvenceye alındı · risk kapatıldı`,
       severity: "success",
       financialEur: amount,
       guestLabel: guest,
     },
     VIP_ESCALATION: {
-      title: "VIP guest escalation",
-      detail: `${guest} · human takeover pathway active`,
+      title: "VIP misafir yükseltildi",
+      detail: `${guest} · operatör devri yolu aktif`,
       severity: "critical",
       financialEur: amount,
       guestLabel: guest,
     },
     HUMAN_TAKEOVER: {
-      title: "Human takeover needed",
-      detail: `${guest} · ops joined thread · AI context synced`,
+      title: "Operatör aksiyonu gerekli",
+      detail: `${guest} · operasyon görüşmeye katıldı · AI bağlamı eşitlendi`,
       severity: "warning",
       financialEur: amount,
       guestLabel: guest,
     },
     OTA_CONVERSION: {
-      title: "OTA conversion detected",
-      detail: `${guest} · direct booking · commission avoided`,
+      title: "OTA dönüşümü algılandı",
+      detail: `${guest} · direkt rezervasyon · komisyon önlendi`,
       severity: "success",
       financialEur: amount,
       guestLabel: guest,
@@ -747,32 +747,32 @@ function buildAiAction(
 ): AIAction | null {
   const map: Partial<Record<OperationalEventType, { action: string; rationale: string }>> = {
     PAYMENT_FAILED: {
-      action: "Payment recovery sequence initiated",
-      rationale: "Card decline — alternate link and deposit split within policy.",
+      action: "Ödeme kurtarma akışı başlatıldı",
+      rationale: "Kart reddi — politika dahilinde alternatif bağlantı ve depozito bölme.",
     },
     RECOVERY_STARTED: {
-      action: "Recovery workflow orchestrated",
-      rationale: "Multi-step recovery synchronized with reservation pipeline.",
+      action: "Kurtarma akışı hazırlandı",
+      rationale: "Çok adımlı kurtarma rezervasyon süreciyle eşitlendi.",
     },
     RECOVERY_SUCCESS: {
-      action: "Payment recovery completed",
-      rationale: "Guest confirmed payment — revenue exposure neutralized.",
+      action: "Ödeme kurtarma tamamlandı",
+      rationale: "Misafir ödemeyi onayladı — gelir riski kapandı.",
     },
     UPSELL_ACCEPTED: {
-      action: "Post-confirmation upsell accepted",
-      rationale: "ADR bundle surfaced at optimal lifecycle moment.",
+      action: "Onay sonrası ek satış kabul edildi",
+      rationale: "ADR paketi doğru yaşam döngüsü anında öne çıkarıldı.",
     },
     VIP_ESCALATION: {
-      action: "VIP escalation triage",
-      rationale: "Cancellation risk scored — human takeover recommended.",
+      action: "VIP yükseltme ön değerlendirmesi",
+      rationale: "İptal riski skorlandı — operatör devri önerildi.",
     },
     OTA_CONVERSION: {
-      action: "OTA → direct conversion workflow",
-      rationale: "Rate parity and loyalty perk — commission retention path.",
+      action: "OTA → direkt dönüşüm akışı",
+      rationale: "Fiyat eşitliği ve sadakat avantajı — komisyon koruma yolu.",
     },
     HUMAN_TAKEOVER: {
-      action: "Human takeover handoff",
-      rationale: "Context packet delivered — assisted close in progress.",
+      action: "Operatör devri",
+      rationale: "Bağlam paketi iletildi — destekli kapanış sürüyor.",
     },
   };
 

@@ -3,11 +3,11 @@ import Image from "next/image";
 import { MessageSquare, Calendar, BookOpen, Settings, BarChart3 } from "lucide-react";
 
 const navItems = [
-  { href: "/inbox", label: "Inbox", icon: MessageSquare },
-  { href: "/reservations", label: "Reservations", icon: Calendar },
-  { href: "/knowledge", label: "Knowledge", icon: BookOpen },
-  { href: "/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/inbox", label: "Kutu", icon: MessageSquare },
+  { href: "/reservations", label: "Rezervasyonlar", icon: Calendar },
+  { href: "/knowledge", label: "Bilgi merkezi", icon: BookOpen },
+  { href: "/analytics", label: "Analiz", icon: BarChart3 },
+  { href: "/settings", label: "Ayarlar", icon: Settings },
 ];
 
 export default function DashboardLayout({

@@ -10,8 +10,8 @@ import { NODE_LABELS } from "@/lib/runtime/graph/propagation";
 
 const ACTOR_META = {
   ai: { icon: Bot, label: "AI", color: "text-blue-400" },
-  human: { icon: User, label: "Human", color: "text-rose-400" },
-  system: { icon: Cog, label: "System", color: "text-white/45" },
+  human: { icon: User, label: "Operatör", color: "text-rose-400" },
+  system: { icon: Cog, label: "Sistem", color: "text-white/45" },
 } as const;
 
 export default function AuditPage() {
@@ -26,12 +26,12 @@ export default function AuditPage() {
           className="mb-4 inline-flex items-center gap-1 text-xs text-white/40 hover:text-white/70"
         >
           <ChevronLeft className="h-3 w-3" />
-          AI Brain
+          AI merkezi
         </Link>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/25">Audit & explainability</p>
-        <h1 className="text-xl font-semibold text-white">Operational intelligence journal</h1>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/25">Kayıt ve açıklanabilirlik</p>
+        <h1 className="text-xl font-semibold text-white">Operasyon zeka kayıtları</h1>
         <p className="mt-0.5 text-sm text-white/40">
-          AI rationale, propagation chains, and orchestration consequences — enterprise operational logging
+          AI gerekçesi, etki zincirleri ve operasyon sonuçları — kurumsal operasyon kaydı
         </p>
         <MotionAuditList mounted={mounted} auditLog={auditLog} />
       </div>
@@ -71,7 +71,7 @@ function MotionAuditList({
                 </p>
                 {mounted && entry.financialImpactEur !== undefined ? (
                   <p className="mt-2 text-[11px] font-semibold text-emerald-400 tabular-nums">
-                    Financial impact · {formatEur(entry.financialImpactEur)}
+                    Finansal etki · {formatEur(entry.financialImpactEur)}
                     {entry.attribution ? ` · ${entry.attribution.replace(/_/g, " ")}` : ""}
                   </p>
                 ) : null}

@@ -66,7 +66,7 @@ export function buildThreadRuntimeStream(input: BuildStreamInput): RuntimeStream
         kind: "reasoning",
         title: journey.reasoning.headline,
         detail: journey.reasoning.factors.join(" · "),
-        timestamp: journey.steps[journey.steps.length - 1]?.timestamp ?? "Now",
+        timestamp: journey.steps[journey.steps.length - 1]?.timestamp ?? "Şimdi",
         confidence: journey.reasoning.confidence,
       });
     }
@@ -74,8 +74,8 @@ export function buildThreadRuntimeStream(input: BuildStreamInput): RuntimeStream
       nodes.push({
         id: `mem-pattern-${conversation.id}`,
         kind: "memory",
-        title: "Memory runtime matched prior successful recovery pattern",
-        detail: guest.memory.recoveryHistory[0] ?? "Pattern library synchronized",
+        title: "Misafir hafızası önceki başarılı kurtarma örüntüsünü eşledi",
+        detail: guest.memory.recoveryHistory[0] ?? "Örüntü kütüphanesi eşitlendi",
         timestamp: "11:25",
       });
     }
@@ -83,8 +83,8 @@ export function buildThreadRuntimeStream(input: BuildStreamInput): RuntimeStream
       nodes.push({
         id: `orch-armed-${journey.id}`,
         kind: "orchestration",
-        title: "Recovery workflow armed",
-        detail: "Alternate payment link selected · human ops standby SLA 12m",
+        title: "Kurtarma akışı hazırlandı",
+        detail: "Alternatif ödeme bağlantısı seçildi · operatör beklemede SLA 12 dk",
         timestamp: "11:26",
       });
     }
@@ -107,7 +107,7 @@ export function buildThreadRuntimeStream(input: BuildStreamInput): RuntimeStream
       nodes.push({
         id: `prop-${entry.id}`,
         kind: "propagation",
-        title: "Operational graph synchronized",
+        title: "Operasyon grafiği eşitlendi",
         detail: entry.propagationNodes.map((n) => n.replace(/_/g, " ")).join(" → "),
         timestamp: entry.timestamp,
         propagationNodes: entry.propagationNodes,
@@ -133,8 +133,8 @@ export function buildThreadRuntimeStream(input: BuildStreamInput): RuntimeStream
     nodes.push({
       id: `fin-outcome-${conversation.id}`,
       kind: "outcome",
-      title: conversation.flags.recoveryActive ? "Revenue secured" : attr.label,
-      detail: conversation.flags.recoveryActive ? "Booking retained · graph layers updated" : attr.detail,
+      title: conversation.flags.recoveryActive ? "Gelir güvenceye alındı" : attr.label,
+      detail: conversation.flags.recoveryActive ? "Rezervasyon korundu · operasyon katmanları güncellendi" : attr.detail,
       timestamp: conversation.time,
       financialEur: attr.amountEur,
     });
@@ -148,7 +148,7 @@ export function buildThreadRuntimeStream(input: BuildStreamInput): RuntimeStream
         kind: "memory",
         title: "Memory updated",
         detail: memLine,
-        timestamp: "Live",
+        timestamp: "Canlı",
       });
     }
   }
@@ -157,7 +157,7 @@ export function buildThreadRuntimeStream(input: BuildStreamInput): RuntimeStream
     nodes.push({
       id: `idle-${conversation.id}`,
       kind: "transition",
-      title: "Orchestration monitoring",
+      title: "Operasyon izleniyor",
       detail: conversation.lastMessage,
       timestamp: conversation.time,
     });

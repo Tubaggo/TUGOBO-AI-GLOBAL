@@ -1,7 +1,7 @@
 import type { ChannelType, ConversationStage } from "./types";
 
 export const CHANNEL_LABELS: Record<ChannelType, string> = {
-  web_chat: "Web Chat",
+  web_chat: "Web sohbet",
   whatsapp: "WhatsApp",
   instagram: "Instagram",
   manual: "Manuel",

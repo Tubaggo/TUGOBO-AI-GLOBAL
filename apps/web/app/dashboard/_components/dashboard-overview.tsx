@@ -28,7 +28,7 @@ const metrics = [
     icon: DollarSign,
     iconColor: "text-emerald-400",
     iconBg: "bg-emerald-500/10",
-    sub: "direct · rolling 7d",
+    sub: "direkt · son 7 gün",
   },
   {
     label: "Direkt rezervasyon",
@@ -37,16 +37,16 @@ const metrics = [
     icon: CalendarCheck,
     iconColor: "text-blue-400",
     iconBg: "bg-blue-500/10",
-    sub: "vs last week",
+    sub: "geçen haftaya göre",
   },
   {
-    label: "OTA commission saved",
+    label: "OTA komisyon tasarrufu",
     value: "$1,860",
     delta: "+$320",
     icon: PiggyBank,
     iconColor: "text-amber-400",
     iconBg: "bg-amber-500/10",
-    sub: "15% on direct only",
+    sub: "yalnızca direkt rezervasyon",
   },
   {
     label: "Kaçırılmayan talep",
@@ -55,7 +55,7 @@ const metrics = [
     icon: ShieldAlert,
     iconColor: "text-cyan-400",
     iconBg: "bg-cyan-500/10",
-    sub: "after-hours capture",
+    sub: "mesai dışı yakalanan",
   },
   {
     label: "Ort. yanıt süresi",
@@ -69,62 +69,62 @@ const metrics = [
 ];
 
 const PIPELINE_STAGES = [
-  { key: "inquiry", labelEn: "Inquiry", label: "Talep", count: 6, color: "text-slate-300", ring: "border-white/[0.08] bg-white/[0.03]" },
-  { key: "qualified", labelEn: "Qualified", label: "Nitelendirildi", count: 4, color: "text-violet-300", ring: "border-violet-500/20 bg-violet-500/[0.06]" },
-  { key: "offer", labelEn: "Offer Sent", label: "Teklif", count: 3, color: "text-blue-300", ring: "border-blue-500/20 bg-blue-500/[0.06]" },
-  { key: "payment", labelEn: "Payment Pending", label: "Ödeme", count: 2, color: "text-amber-300", ring: "border-amber-500/20 bg-amber-500/[0.06]" },
-  { key: "confirmed", labelEn: "Confirmed", label: "Onaylı", count: 11, color: "text-emerald-300", ring: "border-emerald-500/25 bg-emerald-500/[0.08]" },
+  { key: "inquiry", labelEn: "Yeni talep", label: "Talep", count: 6, color: "text-slate-300", ring: "border-white/[0.08] bg-white/[0.03]" },
+  { key: "qualified", labelEn: "Uygunluk", label: "Nitelendirildi", count: 4, color: "text-violet-300", ring: "border-violet-500/20 bg-violet-500/[0.06]" },
+  { key: "offer", labelEn: "Teklif gönderildi", label: "Teklif", count: 3, color: "text-blue-300", ring: "border-blue-500/20 bg-blue-500/[0.06]" },
+  { key: "payment", labelEn: "Ödeme bekleniyor", label: "Ödeme", count: 2, color: "text-amber-300", ring: "border-amber-500/20 bg-amber-500/[0.06]" },
+  { key: "confirmed", labelEn: "Onaylandı", label: "Onaylı", count: 11, color: "text-emerald-300", ring: "border-emerald-500/25 bg-emerald-500/[0.08]" },
 ] as const;
 
 const OPERATIONS_FEED = [
   {
     icon: TrendingUp,
-    title: "High-intent lead detected",
-    meta: "Sophie M. · Instagram DM · score 0.91",
-    time: "2m ago",
+    title: "Yüksek niyetli talep algılandı",
+    meta: "Sophie M. · Instagram · skor 0.91",
+    time: "2 dk önce",
     tone: "border-l-violet-400/70 bg-violet-500/[0.04]",
   },
   {
     icon: Banknote,
-    title: "Payment pending",
-    meta: "Hans M. · €780 · link expires in 41m",
-    time: "6m ago",
+    title: "Ödeme bekleniyor",
+    meta: "Hans M. · €780 · bağlantı 41 dk içinde doluyor",
+    time: "6 dk önce",
     tone: "border-l-amber-400/70 bg-amber-500/[0.04]",
   },
   {
     icon: UserPlus,
-    title: "Human takeover recommended",
-    meta: "Elena P. · policy edge · Russian thread",
-    time: "12m ago",
+    title: "Operatör devri öneriliyor",
+    meta: "Elena P. · politika kontrolü · Rusça görüşme",
+    time: "12 dk önce",
     tone: "border-l-rose-400/60 bg-rose-500/[0.04]",
   },
   {
     icon: Bot,
-    title: "AI recovered missed lead",
-    meta: "Re-engaged Ahmet Y. · WhatsApp · 22:04",
-    time: "34m ago",
+    title: "AI kaçan talebi geri kazandı",
+    meta: "Ahmet Y. yeniden yanıtladı · WhatsApp · 22:04",
+    time: "34 dk önce",
     tone: "border-l-blue-400/70 bg-blue-500/[0.04]",
   },
   {
     icon: PiggyBank,
-    title: "OTA commission saved",
-    meta: "Direct close · Superior room · est. €118 avoided",
-    time: "1h ago",
+    title: "OTA komisyonu önlendi",
+    meta: "Direkt kapanış · Superior oda · tahmini €118",
+    time: "1 sa önce",
     tone: "border-l-emerald-400/65 bg-emerald-500/[0.04]",
   },
 ] as const;
 
 const OPS_AUTOMATION_BARS = [
-  { label: "Direct booking coverage", value: "82%", bar: 82 },
-  { label: "Ops layer automation", value: "76%", bar: 76 },
-  { label: "Staff escalation reserve", value: "24%", bar: 24 },
+  { label: "Direkt rezervasyon kapsamı", value: "82%", bar: 82 },
+  { label: "Operasyon otomasyonu", value: "76%", bar: 76 },
+  { label: "Operatör devri rezervi", value: "24%", bar: 24 },
 ] as const;
 
 const COLLABORATION_SIGNALS = [
-  { label: "AI ops layer handling", detail: "18 threads · depth avg 6.2 msgs", icon: Bot, color: "text-blue-400" },
-  { label: "Staff joined", detail: "Maria L. · Sophie Martin · 09:12", icon: Users, color: "text-emerald-400" },
-  { label: "Human takeover suggested", detail: "2 threads · awaiting duty manager", icon: Radio, color: "text-amber-400" },
-  { label: "Reservation card generated", detail: "6 cards issued · 4 paid", icon: FileText, color: "text-violet-400" },
+  { label: "AI operasyonu yönetiyor", detail: "18 görüşme · ort. 6.2 mesaj", icon: Bot, color: "text-blue-400" },
+  { label: "Operatör katıldı", detail: "Maria L. · Sophie Martin · 09:12", icon: Users, color: "text-emerald-400" },
+  { label: "Operatör devri önerildi", detail: "2 görüşme · vardiya yöneticisi bekleniyor", icon: Radio, color: "text-amber-400" },
+  { label: "Rezervasyon kartı oluşturuldu", detail: "6 kart oluşturuldu · 4 ödeme alındı", icon: FileText, color: "text-violet-400" },
 ] as const;
 
 export function DashboardOverview({ linkPrefix }: { linkPrefix: string }) {
@@ -138,23 +138,23 @@ export function DashboardOverview({ linkPrefix }: { linkPrefix: string }) {
       <div className="p-7 max-w-[1300px]">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/28 mb-1.5">Operations command</p>
-            <h1 className="text-xl font-semibold text-white">Good morning 👋</h1>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/28 mb-1.5">Operasyon merkezi</p>
+            <h1 className="text-xl font-semibold text-white">Günaydın</h1>
             <p className="text-sm text-white/40 mt-0.5">
-              Saturday, Apr 25 · Grand Hotel Demo · live pipeline
+              Cumartesi, 25 Nisan · Grand Hotel Demo · canlı operasyon
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-xs font-medium text-emerald-400">Ops layer live</span>
+              <span className="text-xs font-medium text-emerald-400">Operasyon aktif</span>
             </div>
             <Link
               href={conv}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors text-xs font-medium text-white"
             >
               <MessageSquare className="w-3.5 h-3.5" />
-              Operational inbox
+              Operasyon kuyruğu
             </Link>
           </div>
         </div>
@@ -185,10 +185,10 @@ export function DashboardOverview({ linkPrefix }: { linkPrefix: string }) {
           <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between mb-4">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/28">Rezervasyon süreci</p>
-              <h2 className="text-sm font-semibold text-white mt-0.5">Stage mix · command view</h2>
+              <h2 className="text-sm font-semibold text-white mt-0.5">Aşama dağılımı · operasyon görünümü</h2>
             </div>
             <Link href={res} className="text-xs text-blue-400 hover:text-blue-300 transition-colors shrink-0">
-              Open pipeline →
+              Süreci aç →
             </Link>
           </div>
           <div className="flex flex-col gap-3 md:flex-row md:items-stretch md:gap-2">
@@ -219,10 +219,10 @@ export function DashboardOverview({ linkPrefix }: { linkPrefix: string }) {
                   <MessageSquare className="w-4 h-4 text-white/40" />
                   <h2 className="text-sm font-semibold text-white">Misafir operasyonları</h2>
                 </div>
-                <p className="text-[11px] text-white/30 mt-0.5">Unified queue · AI + staff context preserved</p>
+                <p className="text-[11px] text-white/30 mt-0.5">Birleşik kuyruk · AI ve operatör bağlamı korunur</p>
               </div>
               <Link href={conv} className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors shrink-0">
-                View all <ChevronRight className="w-3 h-3" />
+                Tümünü gör <ChevronRight className="w-3 h-3" />
               </Link>
             </div>
             <div className="divide-y divide-white/[0.04]">
@@ -266,8 +266,8 @@ export function DashboardOverview({ linkPrefix }: { linkPrefix: string }) {
                 <div className="flex items-center gap-2">
                   <Radio className="w-4 h-4 text-emerald-400/80" />
                   <div>
-                    <h2 className="text-sm font-semibold text-white">Operations feed</h2>
-                    <p className="text-[10px] text-white/30">Signals across revenue, risk, and recovery</p>
+                    <h2 className="text-sm font-semibold text-white">Operasyon akışı</h2>
+                    <p className="text-[10px] text-white/30">Gelir, risk ve kurtarma sinyalleri</p>
                   </div>
                 </div>
               </div>
@@ -293,8 +293,8 @@ export function DashboardOverview({ linkPrefix }: { linkPrefix: string }) {
                   <Sparkles className="w-4 h-4 text-blue-300" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-semibold text-white">AI & staff collaboration</h2>
-                  <p className="text-[11px] text-white/35">Last 24h · Grand Hotel Demo</p>
+                  <h2 className="text-sm font-semibold text-white">AI ve operatör işbirliği</h2>
+                  <p className="text-[11px] text-white/35">Son 24 saat · Grand Hotel Demo</p>
                 </div>
               </div>
               <div className="space-y-3.5 mb-5">
@@ -331,18 +331,18 @@ export function DashboardOverview({ linkPrefix }: { linkPrefix: string }) {
         <div className="bg-zinc-900 border border-white/[0.06] rounded-xl overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.05]">
             <div>
-              <h2 className="text-sm font-semibold text-white">Recent reservations</h2>
-              <p className="text-[11px] text-white/30 mt-0.5">Amounts shown as direct-channel capture</p>
+              <h2 className="text-sm font-semibold text-white">Son rezervasyonlar</h2>
+              <p className="text-[11px] text-white/30 mt-0.5">Tutarlar direkt kanal geliri olarak gösterilir</p>
             </div>
             <Link href={res} className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors shrink-0">
-              View all <ChevronRight className="w-3 h-3" />
+              Tümünü gör <ChevronRight className="w-3 h-3" />
             </Link>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-white/[0.04]">
-                  {["Guest", "Room", "Check-in", "Check-out", "Guests", "Stage", "Amount"].map((h) => (
+                  {["Misafir", "Oda", "Giriş", "Çıkış", "Kişi", "Aşama", "Tutar"].map((h) => (
                     <th
                       key={h}
                       className="px-5 py-3 text-left text-[11px] font-semibold text-white/30 uppercase tracking-wider"
@@ -386,11 +386,11 @@ export function DashboardOverview({ linkPrefix }: { linkPrefix: string }) {
 
 function ReservationBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
-    confirmed: { label: "Confirmed", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20" },
-    pending_payment: { label: "Payment pending", cls: "bg-amber-500/15 text-amber-400 border-amber-500/20" },
-    quoted: { label: "Offer sent", cls: "bg-blue-500/15 text-blue-400 border-blue-500/20" },
-    new: { label: "Inquiry", cls: "bg-white/[0.07] text-white/50 border-white/[0.08]" },
-    lost: { label: "Lost", cls: "bg-red-500/15 text-red-400 border-red-500/20" },
+    confirmed: { label: "Onaylandı", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20" },
+    pending_payment: { label: "Ödeme bekleniyor", cls: "bg-amber-500/15 text-amber-400 border-amber-500/20" },
+    quoted: { label: "Teklif gönderildi", cls: "bg-blue-500/15 text-blue-400 border-blue-500/20" },
+    new: { label: "Yeni talep", cls: "bg-white/[0.07] text-white/50 border-white/[0.08]" },
+    lost: { label: "Kaybedildi", cls: "bg-red-500/15 text-red-400 border-red-500/20" },
   };
   const s = map[status] ?? map.new;
   return (

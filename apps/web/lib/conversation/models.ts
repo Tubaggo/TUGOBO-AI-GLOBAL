@@ -5,6 +5,9 @@ import type {
   EscalationState,
   MessageDeliveryStatus,
   PanelChannelType,
+  ReservationLifecycleActor,
+  ReservationLifecycleSeverity,
+  ReservationLifecycleState,
 } from "@tugobo/shared";
 import type { ConversationStage, MessageSender } from "@/lib/channels/types";
 
@@ -30,8 +33,42 @@ export type LiveConversation = {
   lastActivityAt: string;
   externalSessionId?: string;
   bookingValue?: number;
+  reservation?: LiveReservationSummary;
+  latestLifecycleEvent?: ReservationLifecycleEvent;
+  aiSuggestion?: ReservationAiSuggestion;
   requiresHuman: boolean;
   operatorJoinedAt?: string;
+};
+
+export type ReservationLifecycleEvent = {
+  id: string;
+  hotel_id: string;
+  conversation_id: string;
+  reservation_id?: string;
+  state: ReservationLifecycleState;
+  title: string;
+  description: string;
+  timestamp: string;
+  actor: ReservationLifecycleActor;
+  severity: ReservationLifecycleSeverity;
+};
+
+export type ReservationAiSuggestion = {
+  nextReply?: string;
+  suggestedAction: "next_reply" | "payment_follow_up" | "human_takeover";
+  label: string;
+};
+
+export type LiveReservationSummary = {
+  id: string;
+  ref?: string;
+  roomType?: string;
+  checkIn?: string;
+  checkOut?: string;
+  guestCount?: number;
+  totalAmount?: number;
+  currency: string;
+  status: "confirmed" | "pending_payment" | "quoted" | "cancelled";
 };
 
 export type LiveMessage = {

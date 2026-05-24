@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_LABELS = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
 
 const defaultHours: Record<number, { open: boolean; from: string; to: string }> = {
   0: { open: false, from: "09:00", to: "18:00" },
@@ -162,7 +162,7 @@ export default function SettingsPage() {
     Partial<Record<Extract<ChannelConnection["channelType"], "instagram" | "whatsapp">, RotatedSecret>>
   >({});
   const [persona, setPersona] = useState(
-    "Tugobo AI supports hotel operations with clear, concise guest replies. Match the guest language, keep booking and payment steps controlled, and route to human support when needed."
+    "Tugobo AI otel operasyonunu net, kontrollü ve misafir diline uygun yanıtlarla destekler. Rezervasyon ve ödeme adımlarını görünür tutar; gerekli olduğunda operatöre devreder."
   );
   const [hotelName, setHotelName] = useState("Pilot Otel");
   const [timezone, setTimezone] = useState("Europe/Istanbul");
@@ -333,12 +333,12 @@ export default function SettingsPage() {
           <div>
             {isSalesPreview ? (
               <p className="mb-2 text-[11px] leading-relaxed text-white/38">
-                Preview settings use sample workspace data.
+                Önizleme ayarları örnek çalışma alanı verilerini kullanır.
               </p>
             ) : null}
-            <h1 className="text-xl font-semibold text-white">Settings</h1>
+            <h1 className="text-xl font-semibold text-white">Ayarlar</h1>
             <p className="mt-0.5 text-sm text-white/40">
-              Manage hotel profile, AI support tone, and channel connections.
+              Otel profili, AI destek tonu ve kanal bağlantılarını yönetin.
             </p>
           </div>
           <button
@@ -353,25 +353,25 @@ export default function SettingsPage() {
             {saved ? (
               <>
                 <Check className="h-3.5 w-3.5" />
-                Saved
+                Kaydedildi
               </>
             ) : (
-              "Save changes"
+              "Değişiklikleri kaydet"
             )}
           </button>
         </div>
 
         <div className="space-y-5">
-          <Section icon={Building2} title="Hotel profile" description="Core workspace details">
+          <Section icon={Building2} title="Otel profili" description="Temel çalışma alanı bilgileri">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field label="Hotel name">
+              <Field label="Otel adı">
                 <input
                   value={hotelName}
                   onChange={(e) => setHotelName(e.target.value)}
                   className={inputCls}
                 />
               </Field>
-              <Field label="Timezone">
+              <Field label="Saat dilimi">
                 <select value={timezone} onChange={(e) => setTimezone(e.target.value)} className={inputCls}>
                   {["Europe/Istanbul", "Europe/London", "Europe/Berlin", "America/New_York", "Asia/Dubai"].map((tz) => (
                     <option key={tz} value={tz}>
@@ -380,29 +380,29 @@ export default function SettingsPage() {
                   ))}
                 </select>
               </Field>
-              <Field label="Default language">
+              <Field label="Varsayılan dil">
                 <select className={inputCls}>
-                  <option>Turkish</option>
-                  <option>English</option>
-                  <option>German</option>
-                  <option>Russian</option>
+                  <option>Türkçe</option>
+                  <option>İngilizce</option>
+                  <option>Almanca</option>
+                  <option>Rusça</option>
                 </select>
               </Field>
-              <Field label="Contact email">
+              <Field label="İletişim e-postası">
                 <input defaultValue="iletisim@pilototel.com" type="email" className={inputCls} />
               </Field>
             </div>
           </Section>
 
-          <Section icon={Bot} title="AI support tone" description="How AI should assist guest conversations">
+          <Section icon={Bot} title="AI destek tonu" description="AI'nın misafir görüşmelerine nasıl eşlik edeceği">
             <div className="space-y-4">
               <div className="flex items-start gap-2.5 rounded-lg border border-blue-500/15 bg-blue-500/[0.06] px-3.5 py-3">
                 <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
                 <p className="text-xs leading-relaxed text-blue-300/70">
-                  This description is used in guest conversations. Replies still adapt to the guest language.
+                  Bu açıklama misafir görüşmelerinde kullanılır. Yanıtlar misafirin diline uyum sağlar.
                 </p>
               </div>
-              <Field label="System description">
+              <Field label="Sistem açıklaması">
                 <textarea
                   value={persona}
                   onChange={(e) => setPersona(e.target.value)}
@@ -411,14 +411,14 @@ export default function SettingsPage() {
                 />
               </Field>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <Field label="Guest-facing AI name">
+                <Field label="Misafire görünen AI adı">
                   <input defaultValue="Tugobo AI" className={inputCls} />
                 </Field>
-                <Field label="Human support threshold">
+                <Field label="Operatör devri eşiği">
                   <select className={inputCls}>
-                    <option>Low (&lt;50%)</option>
-                    <option>Balanced (&lt;70%)</option>
-                    <option>High (&lt;85%)</option>
+                    <option>Düşük (&lt;%50)</option>
+                    <option>Dengeli (&lt;%70)</option>
+                    <option>Yüksek (&lt;%85)</option>
                   </select>
                 </Field>
               </div>
@@ -427,8 +427,8 @@ export default function SettingsPage() {
 
           <Section
             icon={Clock3}
-            title="Working hours"
-            description="AI remains available; these hours guide human support notifications."
+            title="Çalışma saatleri"
+            description="AI her zaman aktiftir; bu saatler operatör bildirimlerini yönlendirir."
           >
             <div className="space-y-2">
               {DAY_LABELS.map((day, i) => (
@@ -483,7 +483,7 @@ export default function SettingsPage() {
                       />
                     </div>
                   ) : (
-                    <span className="text-xs text-white/25">Closed</span>
+                    <span className="text-xs text-white/25">Kapalı</span>
                   )}
                 </div>
               ))}
@@ -843,7 +843,7 @@ function testResultClass(status: ChannelTestResult["status"]) {
 
 function formatConnectionDate(value: string) {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "recently";
+  if (Number.isNaN(date.getTime())) return "az önce";
 
   return new Intl.DateTimeFormat("tr-TR", {
     day: "2-digit",

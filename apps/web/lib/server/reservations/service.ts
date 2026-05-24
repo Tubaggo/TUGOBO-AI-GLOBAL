@@ -1,5 +1,6 @@
 import { conversations, db, eq, reservations, type DB } from "@tugobo/db";
 import type { ReservationStatus } from "@tugobo/shared";
+import { recordReservationLifecycleEvent } from "./lifecycle";
 
 function assertDb(): DB {
   if (!db) throw new Error("database_not_configured");
@@ -56,6 +57,15 @@ export async function createReservationFromConversation(input: CreateReservation
     })
     .where(eq(conversations.id, input.conversationId));
 
+  await recordReservationLifecycleEvent({
+    hotelId: input.hotelId,
+    conversationId: input.conversationId,
+    reservationId: row.id,
+    state: status === "confirmed" ? "confirmed" : "quote_prepared",
+    actor: "operator",
+    severity: status === "confirmed" ? "success" : "info",
+  });
+
   return row;
 }
 
@@ -80,6 +90,7 @@ export async function updateReservationStatus(
   const [row] = await database
     .update(reservations)
     .set({ status, timeline, updatedAt: new Date() })
+    .where(eq(reservations.id, reservationId))
     .returning();
 
   if (existing.conversationId) {
@@ -104,6 +115,27 @@ export async function updateReservationStatus(
       .update(conversations)
       .set({ reservationState, paymentState })
       .where(eq(conversations.id, existing.conversationId));
+
+    await recordReservationLifecycleEvent({
+      hotelId: existing.hotelId,
+      conversationId: existing.conversationId,
+      reservationId,
+      state:
+        status === "confirmed"
+          ? "confirmed"
+          : status === "cancelled"
+            ? "cancelled"
+            : status === "pending_payment"
+              ? "payment_pending"
+              : "quote_sent",
+      actor: "operator",
+      severity:
+        status === "confirmed"
+          ? "success"
+          : status === "cancelled"
+            ? "warning"
+            : undefined,
+    });
   }
 
   return row;

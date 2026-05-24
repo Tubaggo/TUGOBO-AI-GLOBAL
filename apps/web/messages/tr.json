@@ -107,7 +107,7 @@
       "atRisk": "Risk altında"
     },
     "footer": "Misafir ilerledikçe aşamalar güncellenir",
-    "empty": "Aktif rezervasyon pipeline'ı boş.",
+    "empty": "Aktif rezervasyon süreci boş.",
     "emptyDetail": "Yeni talepler ve onaylar burada görünür.",
     "timelineTitle": "Rezervasyon geçmişi",
     "tabs": {
@@ -428,7 +428,7 @@
   "entityHeader": {
     "operationalStatus": "Operasyon durumu",
     "financialState": "Finansal durum",
-    "aiRuntime": "AI çalışma zamanı",
+    "aiRuntime": "AI destek durumu",
     "memoryState": "Misafir geçmişi",
     "operationalOutcome": "Operasyon sonucu",
     "secured": "{amount} güvence altında",

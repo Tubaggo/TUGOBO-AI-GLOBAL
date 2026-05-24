@@ -21,6 +21,13 @@ import type { AiRespondRequest } from "@/lib/ai/types";
 import { sendManychatOutboundMessage } from "@/lib/server/integrations/manychat-outbound";
 import { updateChannelHealthFromEvent, validateChannelSecret } from "@/lib/server/channels/service";
 import { recordOperationFeedEvent } from "@/lib/server/operations/operation-feed";
+import {
+  aiSuggestionFromLifecycleEvent,
+  getLatestReservationLifecycleEvent,
+  getReservationSummaryForConversation,
+  hasReservationIntent,
+  recordReservationLifecycleEvent,
+} from "@/lib/server/reservations/lifecycle";
 
 type ConversationRow = {
   conversation: typeof conversations.$inferSelect;
@@ -257,7 +264,21 @@ export async function listLiveConversations(hotelId: string): Promise<LiveConver
       .orderBy(desc(messages.createdAt))
       .limit(1);
 
-    result.push(dbConversationToLive(row.conversation, row.contact, lastMsg?.content));
+    const latestLifecycleEvent = await getLatestReservationLifecycleEvent({
+      hotelId,
+      conversationId: row.conversation.id,
+    });
+    const reservation = await getReservationSummaryForConversation({
+      hotelId,
+      conversationId: row.conversation.id,
+    });
+
+    result.push({
+      ...dbConversationToLive(row.conversation, row.contact, lastMsg?.content),
+      latestLifecycleEvent,
+      reservation,
+      aiSuggestion: aiSuggestionFromLifecycleEvent(latestLifecycleEvent),
+    });
   }
   return result;
 }
@@ -394,6 +415,16 @@ export async function ingestGuestMessage(
     severity: "info",
   });
 
+  if (hasReservationIntent(params.message)) {
+    await recordReservationLifecycleEvent({
+      hotelId: params.hotelId,
+      conversationId,
+      state: "inquiry_received",
+      actor: "guest",
+      severity: "info",
+    });
+  }
+
   return { conversationId, messageId: msg.id };
 }
 
@@ -513,6 +544,16 @@ export async function ingestManychatMessage(
       },
     },
   ]);
+
+  if (hasReservationIntent(params.message)) {
+    await recordReservationLifecycleEvent({
+      hotelId: params.hotelId,
+      conversationId,
+      state: "inquiry_received",
+      actor: "guest",
+      severity: "info",
+    });
+  }
 
   await updateChannelHealthFromEvent({
     hotelId: params.hotelId,
@@ -642,6 +683,15 @@ export async function sendOperatorMessage(
       description: "Operatör misafire yanıt gönderdi.",
       severity: "success",
     });
+    if (hasReservationIntent(body)) {
+      await recordReservationLifecycleEvent({
+        hotelId: conv.hotelId,
+        conversationId,
+        state: "quote_prepared",
+        actor: "operator",
+        severity: "info",
+      });
+    }
     return dbMessageToLive(msg);
   }
 
@@ -722,6 +772,16 @@ export async function sendOperatorMessage(
         : "Operatör misafire yanıt gönderdi.",
     severity: delivery.deliveryStatus === "failed" ? "error" : "success",
   });
+
+  if (hasReservationIntent(body)) {
+    await recordReservationLifecycleEvent({
+      hotelId: conv.hotelId,
+      conversationId,
+      state: "quote_prepared",
+      actor: "operator",
+      severity: "info",
+    });
+  }
 
   return dbMessageToLive(updatedMessage ?? msg);
 }
@@ -834,6 +894,30 @@ export async function runAiReplyForConversation(
     description: "AI destek hazır.",
     severity: "success",
   });
+
+  if (result.ok && result.data.reservationStage) {
+    const lifecycleState =
+      result.data.reservationStage === "offer_sent"
+        ? "quote_sent"
+        : result.data.reservationStage === "payment_pending" ||
+            result.data.reservationStage === "payment_problem"
+          ? "payment_pending"
+          : result.data.reservationStage === "confirmed"
+            ? "confirmed"
+            : result.data.requiresHuman
+              ? "human_review_required"
+              : null;
+
+    if (lifecycleState) {
+      await recordReservationLifecycleEvent({
+        hotelId: row.conversation.hotelId,
+        conversationId,
+        state: lifecycleState,
+        actor: "ai",
+        severity: lifecycleState === "human_review_required" ? "warning" : undefined,
+      });
+    }
+  }
 
   if (result.ok && result.data.requiresHuman) {
     await database.insert(operationalEvents).values({

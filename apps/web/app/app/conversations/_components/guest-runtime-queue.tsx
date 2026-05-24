@@ -30,7 +30,7 @@ export function GuestRuntimeQueue({
     <aside className="flex h-full w-[280px] shrink-0 flex-col border-r border-white/[0.04] bg-zinc-950/60">
       <div className="shrink-0 border-b border-white/[0.04] px-4 py-4">
         <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/35">
-          Guest queue
+          Misafir kuyruğu
         </p>
         <p className="mt-0.5 text-[11px] text-white/32">
           {conversations.length} active · live routing

@@ -20,7 +20,7 @@ export interface ConvReservation {
   pricePerNight: number;
   total: number;
   currency: string;
-  status: "confirmed" | "pending_payment" | "quoted";
+  status: "confirmed" | "pending_payment" | "quoted" | "cancelled" | "human_review";
 }
 
 export interface ChatThread {
@@ -115,7 +115,7 @@ export const CHAT_THREADS: Record<string, ChatThread> = {
       {
         id: "3",
         dir: "system",
-        body: "Tugobo AI is checking availability…",
+        body: "Tugobo AI uygunluğu kontrol ediyor…",
         time: "11:05",
       },
       {
@@ -229,7 +229,7 @@ export const CHAT_THREADS: Record<string, ChatThread> = {
       {
         id: "3",
         dir: "system",
-        body: "Tugobo AI is checking availability…",
+        body: "Tugobo AI uygunluğu kontrol ediyor…",
         time: "09:10",
       },
       {
@@ -268,13 +268,13 @@ export const CHAT_THREADS: Record<string, ChatThread> = {
       {
         id: "9",
         dir: "system",
-        body: "Reservation #GHD-2835 created · payment link sent",
+        body: "Rezervasyon #GHD-2835 oluşturuldu · ödeme bağlantısı gönderildi",
         time: "09:13",
       },
       {
         id: "10",
         dir: "system",
-        body: "Payment received · $850 · Jun 15, 09:14",
+        body: "Ödeme alındı · $850 · 15 Haz, 09:14",
         time: "09:14",
       },
       {
@@ -352,7 +352,7 @@ export const CHAT_THREADS: Record<string, ChatThread> = {
       {
         id: "7",
         dir: "system",
-        body: "Quote #GHD-2849 generated · awaiting guest confirmation",
+        body: "Teklif #GHD-2849 oluşturuldu · misafir onayı bekleniyor",
         time: "10:51",
       },
       {
@@ -423,7 +423,7 @@ export const CHAT_THREADS: Record<string, ChatThread> = {
       {
         id: "7",
         dir: "system",
-        body: "Reservation #GHD-2812 updated · Jun 22 → Jun 27 · +$340 payment link sent",
+        body: "Rezervasyon #GHD-2812 güncellendi · 22 Haz → 27 Haz · +$340 ödeme bağlantısı gönderildi",
         time: "08:11",
       },
       {
@@ -511,7 +511,7 @@ export const CHAT_THREADS: Record<string, ChatThread> = {
       {
         id: "3",
         dir: "system",
-        body: "Tugobo AI is checking availability…",
+        body: "Tugobo AI uygunluğu kontrol ediyor…",
         time: "14:20",
       },
       {
@@ -550,13 +550,13 @@ export const CHAT_THREADS: Record<string, ChatThread> = {
       {
         id: "9",
         dir: "system",
-        body: "Reservation #GHD-2803 created · payment link sent",
+        body: "Rezervasyon #GHD-2803 oluşturuldu · ödeme bağlantısı gönderildi",
         time: "14:24",
       },
       {
         id: "10",
         dir: "system",
-        body: "Payment received · $1,200 · Jul 1, 14:35",
+        body: "Ödeme alındı · $1,200 · 1 Tem, 14:35",
         time: "14:35",
       },
       {

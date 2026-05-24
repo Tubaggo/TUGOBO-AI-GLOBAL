@@ -45,6 +45,24 @@ function statusMap() {
       badge: "bg-blue-500/15 text-blue-400 border-blue-500/25",
       dot: "bg-blue-400",
     },
+    cancelled: {
+      label: "İptal edildi",
+      icon: AlertCircle,
+      border: "border-rose-500/25",
+      header: "bg-rose-500/[0.07]",
+      iconColor: "text-rose-400",
+      badge: "bg-rose-500/15 text-rose-300 border-rose-500/25",
+      dot: "bg-rose-400",
+    },
+    human_review: {
+      label: "Operatör incelemesi",
+      icon: AlertCircle,
+      border: "border-amber-500/25",
+      header: "bg-amber-500/[0.07]",
+      iconColor: "text-amber-400",
+      badge: "bg-amber-500/15 text-amber-300 border-amber-500/25",
+      dot: "bg-amber-400 animate-pulse",
+    },
   } as const;
 }
 

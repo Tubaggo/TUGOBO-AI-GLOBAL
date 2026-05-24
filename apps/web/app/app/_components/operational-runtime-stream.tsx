@@ -42,7 +42,7 @@ export function OperationalRuntimeStream({
     <section className={cn("runtime-surface -mx-1 px-1 py-2", className)}>
       <div className="mb-4 flex items-center justify-between gap-3">
         <MotionRuntimeStreamHeadingBlock />
-        <span className="text-[10px] tabular-nums text-white/25">{nodes.length} linked events</span>
+        <span className="text-[10px] tabular-nums text-white/25">{nodes.length} bağlı olay</span>
       </div>
       <div className="relative pl-1">
         {nodes.map((node, i) => (
@@ -57,9 +57,9 @@ function MotionRuntimeStreamHeadingBlock() {
   return (
     <div>
       <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-400/70">
-        Operational runtime
+        Canlı operasyon
       </p>
-      <h3 className="text-sm font-semibold text-white/90">Unified intelligence stream</h3>
+      <h3 className="text-sm font-semibold text-white/90">Birleşik zeka akışı</h3>
     </div>
   );
 }
@@ -102,8 +102,8 @@ function StreamNodeRow({ node, isLast }: { node: RuntimeStreamNode; isLast: bool
           {node.financialEur !== undefined && node.financialEur > 0 ? (
             <p className="mt-1.5 text-xs font-semibold tabular-nums text-emerald-400/95">
               {node.kind === "event" && node.title.toLowerCase().includes("risk")
-                ? `${formatEur(node.financialEur)} exposure identified`
-                : `${formatEur(node.financialEur)} retained`}
+                ? `${formatEur(node.financialEur)} risk algılandı`
+                : `${formatEur(node.financialEur)} korundu`}
             </p>
           ) : null}
           {node.propagationNodes && node.propagationNodes.length > 0 && node.kind === "propagation" ? (

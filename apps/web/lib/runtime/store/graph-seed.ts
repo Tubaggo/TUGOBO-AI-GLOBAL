@@ -16,8 +16,8 @@ export const SEED_UNIFIED_TIMELINE: UnifiedTimelineEntry[] = [
   {
     id: "tl-seed-1",
     kind: "PAYMENT_FAILED",
-    title: "Payment risk detected on Triple Room",
-    detail: "Propagation: revenue · pipeline · recovery · memory",
+    title: "Üç Kişilik Oda için ödeme riski algılandı",
+    detail: "Etki: gelir · rezervasyon · kurtarma · hafıza",
     timestamp: "11:24",
     actor: "system",
     guestId: "g2",
@@ -30,8 +30,8 @@ export const SEED_UNIFIED_TIMELINE: UnifiedTimelineEntry[] = [
   {
     id: "tl-seed-2",
     kind: "VIP_ESCALATION",
-    title: "VIP escalation · human takeover",
-    detail: "Propagation: thread · guest intel · audit · alerts",
+    title: "VIP yükseltme · operatör devraldı",
+    detail: "Etki: görüşme · misafir zekası · denetim · uyarılar",
     timestamp: "08:42",
     actor: "ai",
     guestId: "g1",
@@ -43,8 +43,8 @@ export const SEED_UNIFIED_TIMELINE: UnifiedTimelineEntry[] = [
   {
     id: "tl-seed-3",
     kind: "OTA_CONVERSION",
-    title: "OTA → direct conversion secured",
-    detail: "Commission avoided · loyalty graph updated",
+    title: "OTA → direkt rezervasyon dönüşümü sağlandı",
+    detail: "Komisyon önlendi · sadakat hafızası güncellendi",
     timestamp: "09:19",
     actor: "ai",
     guestId: "g3",
@@ -55,8 +55,8 @@ export const SEED_UNIFIED_TIMELINE: UnifiedTimelineEntry[] = [
   {
     id: "tl-seed-4",
     kind: "UPSELL_ACCEPTED",
-    title: "Post-confirmation upsell accepted",
-    detail: "ADR uplift · guest financial memory enriched",
+    title: "Onay sonrası ek satış kabul edildi",
+    detail: "ADR artışı · misafir finansal hafızası zenginleşti",
     timestamp: "10:02",
     actor: "ai",
     guestId: "g4",

@@ -16,6 +16,10 @@ import {
 import { recordManychatDevRuntimeEvent } from "@/lib/server/integrations/manychat-dev-events";
 import { updateChannelHealthFromEvent } from "@/lib/server/channels/service";
 import { recordOperationFeedEvent } from "@/lib/server/operations/operation-feed";
+import {
+  hasReservationIntent,
+  recordReservationLifecycleEvent,
+} from "@/lib/server/reservations/lifecycle";
 
 export const runtime = "nodejs";
 
@@ -109,6 +113,16 @@ async function handleLocalDevFallback(normalized: NormalizedManychatInboundMessa
     severity: "success",
     conversationId: `demo-manychat-${normalized.channel}-${normalized.externalUserId}`,
   });
+
+  if (hasReservationIntent(normalized.message)) {
+    await recordReservationLifecycleEvent({
+      hotelId: normalized.hotelId,
+      conversationId: `demo-manychat-${normalized.channel}-${normalized.externalUserId}`,
+      state: "inquiry_received",
+      actor: "guest",
+      severity: "info",
+    });
+  }
 
   return NextResponse.json({
     success: true,

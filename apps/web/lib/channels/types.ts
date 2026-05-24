@@ -36,6 +36,46 @@ export type OperationMessage = {
   meta?: OperationMessageMeta;
 };
 
+export type ReservationLifecycleEvent = {
+  id: string;
+  hotel_id: string;
+  conversation_id: string;
+  reservation_id?: string;
+  state:
+    | "inquiry_received"
+    | "quote_prepared"
+    | "quote_sent"
+    | "payment_link_sent"
+    | "payment_pending"
+    | "confirmed"
+    | "cancelled"
+    | "expired"
+    | "human_review_required";
+  title: string;
+  description: string;
+  timestamp: string;
+  actor: "guest" | "ai" | "operator" | "system";
+  severity: "info" | "success" | "warning" | "error";
+};
+
+export type OperationReservationSummary = {
+  id: string;
+  ref?: string;
+  roomType?: string;
+  checkIn?: string;
+  checkOut?: string;
+  guestCount?: number;
+  totalAmount?: number;
+  currency: string;
+  status: "confirmed" | "pending_payment" | "quoted" | "cancelled";
+};
+
+export type OperationAiSuggestion = {
+  nextReply?: string;
+  suggestedAction: "next_reply" | "payment_follow_up" | "human_takeover";
+  label: string;
+};
+
 export type OperationConversation = {
   id: string;
   hotelId?: string;
@@ -58,6 +98,11 @@ export type OperationConversation = {
   requiresHuman: boolean;
   aiStatus?: AiStatus;
   unreadCount?: number;
+  reservationState?: "none" | "inquiry" | "quoted" | "payment_pending" | "confirmed" | "cancelled";
+  paymentState?: "none" | "pending" | "failed" | "completed";
+  reservation?: OperationReservationSummary;
+  latestLifecycleEvent?: ReservationLifecycleEvent;
+  aiSuggestion?: OperationAiSuggestion;
   messages: OperationMessage[];
   externalId?: string;
   guestPhone?: string;

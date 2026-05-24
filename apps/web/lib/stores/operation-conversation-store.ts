@@ -53,6 +53,20 @@ function newConversationId(): string {
   return `op-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function localDevConversationId(input: IngestChannelMessageInput): string | null {
+  if (process.env.NODE_ENV === "production") return null;
+  if (input.provider !== "manychat") return null;
+  if (input.channel !== "instagram" && input.channel !== "whatsapp") return null;
+
+  const prefix = `manychat:${input.channel}:`;
+  const externalUserId = input.externalId?.startsWith(prefix)
+    ? input.externalId.slice(prefix.length).trim()
+    : "";
+
+  if (!externalUserId) return null;
+  return `demo-manychat-${input.channel}-${externalUserId}`;
+}
+
 function priorityForStage(stage: ConversationStage): OperationConversation["priority"] {
   if (stage === "human_review" || stage === "payment_problem") return "high";
   if (stage === "payment_pending" || stage === "offer_sent") return "medium";
@@ -132,7 +146,7 @@ export const useOperationConversationStore = create<OperationConversationState>(
     }
 
     if (!conversationId) {
-      conversationId = newConversationId();
+      conversationId = localDevConversationId(input) ?? newConversationId();
     }
 
     const guestMsg = buildGuestMessage(conversationId, input);

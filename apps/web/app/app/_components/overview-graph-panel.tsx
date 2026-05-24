@@ -11,16 +11,16 @@ export function OverviewGraphPanel() {
     <div className="mb-6 grid grid-cols-1 gap-8 xl:grid-cols-[1fr_320px]">
       <section className="border-b border-white/[0.04] pb-6 xl:border-b-0 xl:border-r xl:pb-0 xl:pr-8">
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-400/50">
-          Connected operational history
+          Bağlı operasyon geçmişi
         </p>
-        <h2 className="mb-4 text-sm font-semibold text-white">Unified runtime timeline</h2>
+        <h2 className="mb-4 text-sm font-semibold text-white">Birleşik operasyon akışı</h2>
         <UnifiedOperationalTimeline entries={timeline} limit={6} />
       </section>
       <section>
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-400/50">
-          System synchronization
+          Sistem eşitleme
         </p>
-        <h2 className="mb-4 text-sm font-semibold text-white">Propagation engine</h2>
+        <h2 className="mb-4 text-sm font-semibold text-white">Etki zinciri</h2>
         <GraphPropagationEngine />
       </section>
     </div>

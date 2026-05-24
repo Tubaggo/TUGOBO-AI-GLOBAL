@@ -106,18 +106,19 @@ export function simulateAIResponse(
   message: string,
   conversation: Pick<OperationConversation, "stage" | "guestName" | "channel" | "language">
 ): SimulatedAiResult {
-  const locale = localeFromGuestLanguage(conversation.language);
+  const guestLocale = localeFromGuestLanguage(conversation.language);
+  const operationalLocale: PanelLocale = "tr";
   const stage = inferStage(message, conversation.stage);
   const requiresHuman = stage === "human_review" || stage === "payment_problem";
-  const replyText = buildReply(message, stage, locale);
-  const operationalEvents = operationalEventsForStage(conversation.stage, stage, locale);
+  const replyText = buildReply(message, stage, guestLocale);
+  const operationalEvents = operationalEventsForStage(conversation.stage, stage, operationalLocale);
   const bookingValue = bookingValueForStage(stage);
 
   return {
     replyText,
     stage,
     statusLabel: STAGE_STATUS_LABELS[stage],
-    suggestedAction: suggestedAction(stage, requiresHuman, locale),
+    suggestedAction: suggestedAction(stage, requiresHuman, operationalLocale),
     requiresHuman,
     aiStatus: requiresHuman ? "waiting_staff" : stage === "qualified" ? "checking" : "replying",
     operationalEvents,

@@ -55,56 +55,56 @@ export function AppSidebar() {
     () => [
       {
         href: `${BASE}/overview`,
-        label: "Overview",
+        label: "Genel bakış",
         icon: LayoutDashboard,
         badge: null,
         match: (p) => p === `${BASE}/overview` || p === BASE,
       },
       {
         href: `${BASE}/conversations`,
-        label: "Conversations",
+        label: "Görüşmeler",
         icon: MessageSquare,
         badge: mounted && unreadConversations > 0 ? String(unreadConversations) : null,
         match: (p) => p.startsWith(`${BASE}/conversations`),
       },
       {
         href: `${BASE}/reservations`,
-        label: "Reservations",
+        label: "Rezervasyonlar",
         icon: Calendar,
         badge: null,
         match: (p) => p.startsWith(`${BASE}/reservations`),
       },
       {
         href: `${BASE}/payments`,
-        label: "Payments",
+        label: "Ödemeler",
         icon: CreditCard,
         badge: mounted && paymentOps > 0 ? String(paymentOps) : null,
         match: (p) => p.startsWith(`${BASE}/payments`),
       },
       {
         href: `${BASE}/operations`,
-        label: "Operations",
+        label: "Operasyon",
         icon: ClipboardList,
         badge: mounted && opsLoad > 0 ? String(opsLoad) : null,
         match: (p) => p.startsWith(`${BASE}/operations`),
       },
       {
         href: `${BASE}/guests`,
-        label: "Guest Profiles",
+        label: "Misafir profilleri",
         icon: UserRound,
         badge: null,
         match: (p) => p.startsWith(`${BASE}/guests`),
       },
       {
         href: `${BASE}/reports`,
-        label: "Reports",
+        label: "Raporlar",
         icon: BarChart3,
         badge: null,
         match: (p) => p.startsWith(`${BASE}/reports`),
       },
       {
         href: `${BASE}/settings`,
-        label: "Settings",
+        label: "Ayarlar",
         icon: Settings,
         badge: null,
         match: (p) => p.startsWith(`${BASE}/settings`),
@@ -145,7 +145,7 @@ export function AppSidebar() {
 
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-2">
         <p className="px-3 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-widest text-white/25">
-          Hotel operations
+          Otel operasyonu
         </p>
         {navItems.map(({ href, label, icon: Icon, badge, match }) => {
           const isActive = match(pathname);
@@ -188,7 +188,7 @@ export function AppSidebar() {
           </div>
           <div className="min-w-0">
             <p className="truncate text-xs font-medium text-white/60">hotel@example.com</p>
-            <p className="text-[10px] text-white/28">Operations · demo</p>
+            <p className="text-[10px] text-white/28">Operasyon · demo</p>
           </div>
         </div>
       </div>
