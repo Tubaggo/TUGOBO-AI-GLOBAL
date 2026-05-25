@@ -16,6 +16,7 @@ import type {
 } from "@tugobo/shared";
 import type { ReservationPaymentEvent } from "@/lib/conversation/models";
 import { MANYCHAT_LOCAL_TEST_HOTEL_ID } from "@/lib/server/integrations/manychat-config";
+import { recordOperationFeedEvent } from "@/lib/server/operations/operation-feed";
 
 export type PaymentRuntimeInput = {
   hotelId: string;
@@ -282,6 +283,11 @@ function channelFromSyntheticConversationId(conversationId: string): PanelChanne
   return "web_chat";
 }
 
+function managedChannelFromPanel(channel: PanelChannelType | null): "web_chat" | "instagram" | "whatsapp" {
+  if (channel === "instagram" || channel === "whatsapp") return channel;
+  return "web_chat";
+}
+
 async function getConversationChannel(input: {
   hotelId: string;
   conversationId: string;
@@ -359,6 +365,19 @@ export async function recordPaymentEvent(
       .returning({ id: operationalEvents.id });
 
     event.id = row?.id ?? event.id;
+  }
+
+  if (event.state === "paid") {
+    await recordOperationFeedEvent({
+      hotelId: input.hotelId,
+      conversationId: input.conversationId,
+      channel: managedChannelFromPanel(channel),
+      eventType: "reservation_lifecycle",
+      title: "Ödeme alındı",
+      description: "Ödeme alındı.",
+      severity: "success",
+      timestamp: new Date(event.timestamp),
+    });
   }
 
   return event;

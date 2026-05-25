@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 import type {
   ChannelFilter,
   ChannelType,
@@ -73,6 +74,60 @@ function priorityForStage(stage: ConversationStage): OperationConversation["prio
   return "low";
 }
 
+function reservationStateForStage(stage: ConversationStage): OperationConversation["reservationState"] {
+  if (stage === "confirmed") return "confirmed";
+  if (stage === "payment_pending" || stage === "payment_problem") return "payment_pending";
+  if (stage === "offer_sent") return "quoted";
+  if (stage === "human_review") return "inquiry";
+  return "inquiry";
+}
+
+function paymentStateForStage(stage: ConversationStage): OperationConversation["paymentState"] {
+  if (stage === "confirmed") return "completed";
+  if (stage === "payment_pending") return "pending";
+  if (stage === "payment_problem") return "failed";
+  return "none";
+}
+
+function shouldCreateReservationSummary(stage: ConversationStage): boolean {
+  return stage === "offer_sent" || stage === "payment_pending" || stage === "payment_problem" || stage === "confirmed";
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function synthesizeReservationSummary(
+  conv: OperationConversation,
+  result: { stage: ConversationStage; bookingValue?: number; roomSuggestion?: string }
+): OperationConversation["reservation"] {
+  if (!shouldCreateReservationSummary(result.stage)) return conv.reservation;
+
+  const checkIn = conv.reservation?.checkIn ?? addDays(new Date(), 21).toISOString();
+  const checkOut = conv.reservation?.checkOut ?? addDays(new Date(checkIn), 5).toISOString();
+  const totalAmount = result.bookingValue ?? conv.reservation?.totalAmount ?? conv.bookingValue ?? 12500;
+  const status =
+    result.stage === "confirmed"
+      ? "confirmed"
+      : result.stage === "offer_sent"
+        ? "quoted"
+        : "pending_payment";
+
+  return {
+    id: conv.reservation?.id ?? `runtime-${conv.id}`,
+    ref: conv.reservation?.ref ?? `TGO-${conv.id.slice(-6).toUpperCase()}`,
+    roomType: result.roomSuggestion ?? conv.reservation?.roomType ?? "Superior Çift Oda",
+    checkIn,
+    checkOut,
+    guestCount: conv.reservation?.guestCount ?? 2,
+    totalAmount,
+    currency: conv.reservation?.currency ?? "TRY",
+    status,
+  };
+}
+
 function appendMessage(
   conv: OperationConversation,
   message: OperationMessage
@@ -103,7 +158,8 @@ function unreadCountAfterGuestMessage(
   return selectedConversationId === conversationId ? 0 : (conv.unreadCount ?? 0) + 1;
 }
 
-export const useOperationConversationStore = create<OperationConversationState>((set, get) => ({
+export const useOperationConversationStore = create<OperationConversationState>()(
+  persist((set, get) => ({
   conversations: [],
   selectedConversationId: null,
   channelFilter: "all",
@@ -299,6 +355,7 @@ export const useOperationConversationStore = create<OperationConversationState>(
             next = appendMessage(next, sm);
           }
           next = appendMessage(next, aiMessage);
+          const reservation = synthesizeReservationSummary(next, result);
           return {
             ...next,
             stage: result.stage,
@@ -306,6 +363,9 @@ export const useOperationConversationStore = create<OperationConversationState>(
             requiresHuman: result.requiresHuman,
             aiStatus: result.aiStatus,
             bookingValue: result.bookingValue ?? c.bookingValue,
+            reservationState: reservationStateForStage(result.stage),
+            paymentState: paymentStateForStage(result.stage),
+            reservation,
             lastMessage: result.replyText,
             priority: priorityForStage(result.stage),
           };
@@ -324,7 +384,17 @@ export const useOperationConversationStore = create<OperationConversationState>(
       language: preset.language,
     });
   },
-}));
+  }), {
+    name: "tugobo-operation-conversations-v1",
+    storage: createJSONStorage(() => localStorage),
+    partialize: (state) => ({
+      conversations: state.conversations,
+      selectedConversationId: state.selectedConversationId,
+      channelFilter: state.channelFilter,
+      pulsingConversationIds: {},
+    }),
+  })
+);
 
 export function ingestChannelMessage(input: IngestChannelMessageInput): string {
   return useOperationConversationStore.getState().addIncomingMessage(input);

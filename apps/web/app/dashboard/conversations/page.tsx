@@ -364,6 +364,53 @@ type PaymentActionSpec = {
   suggestion: string;
 };
 
+type PaymentAmountView = {
+  value?: number;
+  currency: string;
+  label: string;
+};
+
+type OperationalOutcomeKind =
+  | "confirmed"
+  | "payment_pending"
+  | "cancelled"
+  | "quote"
+  | "human_takeover"
+  | "closed_without_reservation";
+
+type OperationalOutcomeTone = {
+  border: string;
+  bg: string;
+  iconBg: string;
+  icon: string;
+  badge: string;
+  dot: string;
+  amount: string;
+  separator: string;
+};
+
+type OperationalOutcomeView = {
+  kind: OperationalOutcomeKind;
+  title: string;
+  description: string;
+  badge: string;
+  lifecycleLabel: string;
+  reservationLabel: string;
+  paymentLabel: string;
+  idLabel?: string;
+  idValue?: string;
+  offerId?: string;
+  room?: string;
+  checkIn?: string;
+  checkOut?: string;
+  guests?: number;
+  nights?: number;
+  amount?: PaymentAmountView;
+  canSendPaymentLink: boolean;
+  tone: OperationalOutcomeTone;
+  icon: React.ElementType;
+};
+
 const PAYMENT_ACTIONS: Partial<Record<ReservationLifecycleActionState, PaymentActionSpec>> = {
   payment_link_sent: {
     state: "payment_link_sent",
@@ -570,13 +617,21 @@ export default function ConversationsPage() {
   // Reservation: localReservations (demo / manual) takes priority over thread data
   const rawReservation = localReservations[selected] ?? thread?.reservation;
   const operationReservation = selectedOperation?.reservation
-    ? operationReservationToPanel(selectedOperation.reservation, selectedConv?.contact.name)
+    ? operationReservationToPanel(
+        selectedOperation.reservation,
+        selectedConv?.contact.name,
+        selectedOperation.bookingValue
+      )
     : undefined;
-  const effectiveReservation: ConvReservation | undefined = rawReservation
-    ? confirmedReservations[selected]
-      ? { ...rawReservation, status: "confirmed" as const }
-      : rawReservation
-    : operationReservation;
+  const baseReservation = rawReservation ?? operationReservation;
+  const effectiveReservation: ConvReservation | undefined = baseReservation
+    ? normalizeConversationReservation(baseReservation, {
+        locallyConfirmed: confirmedReservations[selected],
+        lifecycleEvent: selectedLifecycleEvent,
+        paymentEvent: selectedPaymentEvent,
+        effectiveStatus,
+      })
+    : undefined;
 
   const selectedReservationStatus = effectiveReservation?.status;
 
@@ -858,22 +913,7 @@ export default function ConversationsPage() {
               aiSuggestion: lifecycleSuggestion(event.state),
               requiresHuman:
                 event.state === "human_review_required" || conversation.requiresHuman,
-              reservation: conversation.reservation
-                ? {
-                    ...conversation.reservation,
-                    status:
-                      event.state === "confirmed"
-                        ? "confirmed"
-                        : event.state === "cancelled" || event.state === "expired"
-                          ? "cancelled"
-                          : event.state === "payment_link_sent" ||
-                              event.state === "payment_pending"
-                            ? "pending_payment"
-                            : event.state === "quote_sent" || event.state === "quote_prepared"
-                              ? "quoted"
-                              : conversation.reservation.status,
-                  }
-                : conversation.reservation,
+              reservation: operationReservationForLifecycle(conversation, event),
             }
           : conversation
       ),
@@ -933,14 +973,7 @@ export default function ConversationsPage() {
               paymentState: conversationPaymentStateForPayment(event.state),
               aiSuggestion: paymentSuggestion(event.state),
               bookingValue: event.amount ?? conversation.bookingValue,
-              reservation: conversation.reservation
-                ? {
-                    ...conversation.reservation,
-                    totalAmount: event.amount ?? conversation.reservation.totalAmount,
-                    currency: event.currency ?? conversation.reservation.currency,
-                    status: nextReservationStatus ?? conversation.reservation.status,
-                  }
-                : conversation.reservation,
+              reservation: operationReservationForPayment(conversation, event, nextReservationStatus),
             }
           : conversation
       ),
@@ -1376,17 +1409,26 @@ export default function ConversationsPage() {
     return false;
   }
 
+  function resolvePaymentAmountForAction(
+    state: ReservationLifecycleActionState
+  ): PaymentAmountView {
+    const confirmed = state === "confirmed";
+    return resolvePaymentAmount({
+      event: selectedPaymentEvent,
+      reservation: effectiveReservation,
+      bookingValue: selectedOperation?.bookingValue,
+      conversationId: selected,
+      confirmed,
+    });
+  }
+
   async function handleReservationLifecycleAction(action: ReservationLifecycleAction) {
     if (pendingLifecycleAction) return;
 
     const paymentAction = PAYMENT_ACTIONS[action.state];
-    const paymentAmount =
-      effectiveReservation?.total ??
-      selectedOperation?.reservation?.totalAmount ??
-      selectedOperation?.bookingValue;
-    const paymentCurrency =
-      effectiveReservation?.currency ??
-      selectedOperation?.reservation?.currency;
+    const paymentAmountView = resolvePaymentAmountForAction(action.state);
+    const paymentAmount = paymentAmountView.value;
+    const paymentCurrency = paymentAmountView.currency;
 
     if (selectedLifecycleEvent?.state === action.state) {
       if (paymentAction && selectedPaymentEvent?.state !== paymentAction.state) {
@@ -2135,6 +2177,71 @@ function lifecycleStateToStage(
   return "new_inquiry";
 }
 
+function statusForLifecycleState(
+  state: NonNullable<OperationConversation["latestLifecycleEvent"]>["state"],
+  fallback: OperationReservationSummary["status"] = "quoted"
+): OperationReservationSummary["status"] {
+  if (state === "confirmed") return "confirmed";
+  if (state === "cancelled" || state === "expired") return "cancelled";
+  if (state === "payment_link_sent" || state === "payment_pending") return "pending_payment";
+  if (state === "quote_sent" || state === "quote_prepared") return "quoted";
+  return fallback;
+}
+
+function fallbackReservationSummary(
+  conversation: OperationConversation,
+  status: OperationReservationSummary["status"],
+  amount?: number,
+  currency?: string
+): OperationReservationSummary {
+  const checkIn = new Date();
+  checkIn.setDate(checkIn.getDate() + 21);
+  const checkOut = new Date(checkIn);
+  checkOut.setDate(checkOut.getDate() + 5);
+  const roomSuggestion = conversation.messages
+    .map((message) => message.meta?.roomSuggestion)
+    .find(Boolean);
+
+  return {
+    id: conversation.reservation?.id ?? `runtime-${conversation.id}`,
+    ref: conversation.reservation?.ref ?? `TGO-${conversation.id.slice(-6).toUpperCase()}`,
+    roomType: conversation.reservation?.roomType ?? roomSuggestion ?? "Superior Çift Oda",
+    checkIn: conversation.reservation?.checkIn ?? checkIn.toISOString(),
+    checkOut: conversation.reservation?.checkOut ?? checkOut.toISOString(),
+    guestCount: conversation.reservation?.guestCount ?? 2,
+    totalAmount: amount ?? conversation.reservation?.totalAmount ?? conversation.bookingValue ?? 12500,
+    currency: currency ?? conversation.reservation?.currency ?? "TRY",
+    status,
+  };
+}
+
+function operationReservationForLifecycle(
+  conversation: OperationConversation,
+  event: NonNullable<OperationConversation["latestLifecycleEvent"]>
+): OperationReservationSummary {
+  const status = statusForLifecycleState(event.state, conversation.reservation?.status);
+  return {
+    ...fallbackReservationSummary(conversation, status),
+    ...conversation.reservation,
+    status,
+  };
+}
+
+function operationReservationForPayment(
+  conversation: OperationConversation,
+  event: NonNullable<OperationConversation["latestPaymentEvent"]>,
+  nextStatus?: OperationReservationSummary["status"]
+): OperationReservationSummary {
+  const status = nextStatus ?? conversation.reservation?.status ?? "quoted";
+  return {
+    ...fallbackReservationSummary(conversation, status, event.amount, event.currency),
+    ...conversation.reservation,
+    totalAmount: event.amount ?? conversation.reservation?.totalAmount ?? conversation.bookingValue,
+    currency: event.currency ?? conversation.reservation?.currency ?? "TRY",
+    status,
+  };
+}
+
 function lifecycleSuggestion(
   state: NonNullable<OperationConversation["latestLifecycleEvent"]>["state"]
 ): OperationConversation["aiSuggestion"] {
@@ -2205,6 +2312,63 @@ function lifecycleStateForPayment(
   return undefined;
 }
 
+function normalizeConversationReservation(
+  reservation: ConvReservation,
+  input: {
+    locallyConfirmed?: boolean;
+    lifecycleEvent?: NonNullable<OperationConversation["latestLifecycleEvent"]>;
+    paymentEvent?: NonNullable<OperationConversation["latestPaymentEvent"]>;
+    effectiveStatus?: ConversationStatus;
+  }
+): ConvReservation {
+  const lifecycleState = input.lifecycleEvent?.state;
+  const paymentState = input.paymentEvent?.state;
+
+  if (
+    reservation.status === "cancelled" ||
+    lifecycleState === "cancelled" ||
+    lifecycleState === "expired" ||
+    paymentState === "expired" ||
+    paymentState === "refunded"
+  ) {
+    return { ...reservation, status: "cancelled" };
+  }
+
+  if (
+    input.locallyConfirmed ||
+    reservation.status === "confirmed" ||
+    lifecycleState === "confirmed" ||
+    paymentState === "paid"
+  ) {
+    return { ...reservation, status: "confirmed" };
+  }
+
+  if (lifecycleState === "human_review_required" || input.effectiveStatus === "human_takeover") {
+    return { ...reservation, status: "human_review" };
+  }
+
+  if (
+    reservation.status === "pending_payment" ||
+    lifecycleState === "payment_link_sent" ||
+    lifecycleState === "payment_pending" ||
+    paymentState === "payment_link_sent" ||
+    paymentState === "payment_pending" ||
+    paymentState === "failed"
+  ) {
+    return { ...reservation, status: "pending_payment" };
+  }
+
+  if (
+    reservation.status === "quoted" ||
+    lifecycleState === "quote_prepared" ||
+    lifecycleState === "quote_sent"
+  ) {
+    return { ...reservation, status: "quoted" };
+  }
+
+  return reservation;
+}
+
 function paymentStateLabel(
   state?: ReservationPaymentActionState,
   reservationStatus?: ConvReservation["status"]
@@ -2239,19 +2403,68 @@ function paymentStateClass(
   return "bg-white/[0.05] text-white/45";
 }
 
-function formatPaymentAmount(
-  event: NonNullable<OperationConversation["latestPaymentEvent"]> | undefined,
-  reservation: ConvReservation | undefined
-): string {
+function parsePaymentValue(input?: string): { value: number; currency: string } | undefined {
+  if (!input) return undefined;
+  const currency = input.match(/[^\d.,\s]+/)?.[0] ?? "₺";
+  const numeric = Number(input.replace(/[^\d.,]/g, "").replace(",", "."));
+  if (!Number.isFinite(numeric)) return undefined;
+  return { value: numeric, currency };
+}
+
+function resolvePaymentAmount(input: {
+  event?: NonNullable<OperationConversation["latestPaymentEvent"]>;
+  reservation?: ConvReservation;
+  bookingValue?: number;
+  conversationId: string;
+  confirmed?: boolean;
+}): PaymentAmountView {
+  const { event, reservation, bookingValue, conversationId, confirmed } = input;
+
   if (typeof event?.amount === "number") {
-    return `${currencySymbol(event.currency ?? reservation?.currency ?? "TRY")}${event.amount.toLocaleString("tr-TR")}`;
+    const currency = currencySymbol(event.currency ?? reservation?.currency ?? "TRY");
+    return {
+      value: event.amount,
+      currency,
+      label: `${currency}${event.amount.toLocaleString("tr-TR")}`,
+    };
   }
 
   if (reservation) {
-    return `${reservation.currency}${reservation.total.toLocaleString("tr-TR")}`;
+    return {
+      value: reservation.total,
+      currency: reservation.currency,
+      label: `${reservation.currency}${reservation.total.toLocaleString("tr-TR")}`,
+    };
   }
 
-  return "Tutar bekleniyor";
+  if (typeof bookingValue === "number" && Number.isFinite(bookingValue) && bookingValue > 0) {
+    return {
+      value: bookingValue,
+      currency: "₺",
+      label: `₺${bookingValue.toLocaleString("tr-TR")}`,
+    };
+  }
+
+  const parsed = parsePaymentValue(CONV_REVENUE[conversationId]?.value);
+  if (parsed) {
+    return {
+      ...parsed,
+      label: `${parsed.currency}${parsed.value.toLocaleString("tr-TR")}`,
+    };
+  }
+
+  if (confirmed) {
+    return {
+      value: 12500,
+      currency: "₺",
+      label: "₺12.500",
+    };
+  }
+
+  return {
+    currency: "₺",
+    label: "Tutar bekleniyor",
+  };
 }
 
 function confirmationStateLabel(
@@ -2267,7 +2480,8 @@ function confirmationStateLabel(
 
 function operationReservationToPanel(
   reservation: OperationReservationSummary,
-  guestName = "Misafir"
+  guestName = "Misafir",
+  bookingValue?: number
 ): ConvReservation {
   const dateFormatter = new Intl.DateTimeFormat("tr-TR", {
     day: "2-digit",
@@ -2286,7 +2500,7 @@ function operationReservationToPanel(
     checkInDate && checkOutDate
       ? Math.max(1, Math.round((checkOutDate.getTime() - checkInDate.getTime()) / 86400000))
       : 1;
-  const total = reservation.totalAmount ?? 0;
+  const total = reservation.totalAmount ?? bookingValue ?? 0;
 
   return {
     ref: reservation.ref ?? reservation.id.slice(0, 8).toUpperCase(),
@@ -2304,6 +2518,7 @@ function operationReservationToPanel(
 }
 
 function currencySymbol(currency: string): string {
+  if (currency === "₺" || currency === "€" || currency === "$") return currency;
   if (currency === "TRY") return "₺";
   if (currency === "EUR") return "€";
   if (currency === "USD") return "$";
@@ -2999,10 +3214,32 @@ function GuestSidebar({
 }) {
   const t = useTranslations("conversations");
   const tCommon = useTranslations("common");
-  const r = effectiveReservation;
-  const showPaymentBtn = r && (r.status === "pending_payment" || r.status === "quoted");
+  const r = effectiveReservation as ConvReservation;
   const confidence = aiConfidence ?? 87;
-  const showLifecycleActions = Boolean(r || operationChannel);
+  const outcome = deriveOperationalOutcome({
+    conv,
+    reservation: effectiveReservation,
+    latestPaymentEvent,
+    latestLifecycleEvent,
+    effectiveStatus,
+    requiresHuman,
+    operationBookingValue,
+  });
+  const showPaymentBtn = outcome.canSendPaymentLink;
+  const lifecycleActions = visibleLifecycleActions(outcome);
+  const showLifecycleActions = lifecycleActions.length > 0;
+  const confirmedActive =
+    r?.status === "confirmed" ||
+    latestLifecycleEvent?.state === "confirmed" ||
+    latestPaymentEvent?.state === "paid";
+  const paymentAmount = resolvePaymentAmount({
+    event: latestPaymentEvent,
+    reservation: effectiveReservation,
+    bookingValue: operationBookingValue,
+    conversationId: conv.id,
+    confirmed: confirmedActive,
+  });
+  const paymentDisplayState = confirmedActive ? "paid" : latestPaymentEvent?.state;
 
   return (
     <div className={cn("flex w-full flex-col", compact ? "bg-transparent" : "conv-scroll shrink-0 overflow-y-auto bg-zinc-950/40 lg:w-[284px]")}>
@@ -3065,8 +3302,10 @@ function GuestSidebar({
         </div>
       </div>
 
+      <OperationalOutcomeCard outcome={outcome} />
+
       {/* Booking summary */}
-      {r && (
+      {false && r && (
         <div className="border-b border-white/[0.03] px-5 py-6">
           <SidebarLabel>{t("reservation")}</SidebarLabel>
           <div
@@ -3135,41 +3374,73 @@ function GuestSidebar({
         </div>
       )}
 
-      {(latestPaymentEvent || r || latestLifecycleEvent) ? (
+      {false && (latestPaymentEvent || r || latestLifecycleEvent) ? (
         <div className="border-b border-white/[0.03] px-5 py-6">
           <SidebarLabel>Ödeme durumu</SidebarLabel>
-          <div className="space-y-3 rounded-xl border border-white/[0.05] bg-white/[0.025] p-4">
-            <div className="flex items-center justify-between gap-3 text-[11px]">
-              <span className="text-white/36">Durum</span>
-              <span
-                className={cn(
-                  "rounded-full px-2.5 py-1 font-semibold",
-                  paymentStateClass(latestPaymentEvent?.state, r?.status)
-                )}
-              >
-                {paymentStateLabel(latestPaymentEvent?.state, r?.status)}
-              </span>
+          <div
+            className={cn(
+              "space-y-3 rounded-xl border p-4",
+              confirmedActive
+                ? "border-emerald-500/22 bg-emerald-500/[0.045]"
+                : "border-white/[0.05] bg-white/[0.025]"
+            )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-mono text-white/38">
+                  #{r?.ref ?? latestPaymentEvent?.reservation_id?.slice(0, 8).toUpperCase() ?? "DEMO"}
+                </p>
+                <p className="mt-1 text-[12px] font-semibold leading-snug text-white/88">
+                  {r?.room ?? "Rezervasyon kaydı"}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-[10px] font-semibold text-emerald-300">
+                  {confirmedActive ? "Onaylandı" : confirmationStateLabel(latestLifecycleEvent?.state, r?.status)}
+                </span>
+                <span className={cn("rounded-full px-2.5 py-1 text-[10px] font-semibold", paymentStateClass(paymentDisplayState, r?.status))}>
+                  {paymentStateLabel(paymentDisplayState, r?.status)}
+                </span>
+              </div>
             </div>
+            {r ? (
+              <div className="grid grid-cols-2 gap-2 border-t border-white/[0.04] pt-3 text-[10px]">
+                <div className="text-white/38">
+                  Giriş <span className="block font-medium text-white/72">{r.checkIn}</span>
+                </div>
+                <div className="text-white/38">
+                  Çıkış <span className="block font-medium text-white/72">{r.checkOut}</span>
+                </div>
+                <div className="text-white/38">
+                  Misafir <span className="block font-medium text-white/72">{r.guests}</span>
+                </div>
+                <div className="text-white/38">
+                  Gece <span className="block font-medium text-white/72">{r.nights}</span>
+                </div>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between gap-3 text-[11px]">
               <span className="text-white/36">Tutar</span>
-              <span className="font-semibold text-white/78 tabular-nums">
-                {formatPaymentAmount(latestPaymentEvent, r)}
+              <span className="text-[18px] font-bold text-white tabular-nums tracking-tight">
+                {paymentAmount.label}
               </span>
             </div>
             {latestPaymentEvent ? (
               <div className="border-t border-white/[0.04] pt-3">
                 <p className="text-[11px] font-semibold leading-snug text-white/78">
-                  {latestPaymentEvent.title}
+                  {latestPaymentEvent!.title}
                 </p>
                 <p className="mt-1 text-[10px] leading-relaxed text-white/40">
-                  {latestPaymentEvent.description}
+                  {latestPaymentEvent!.description}
                 </p>
               </div>
             ) : null}
             <div className="flex items-center justify-between gap-3 text-[11px]">
               <span className="text-white/36">Rezervasyon</span>
               <span className="font-semibold text-white/68">
-                {confirmationStateLabel(latestLifecycleEvent?.state, r?.status)}
+                {confirmedActive
+                  ? "Onaylandı"
+                  : confirmationStateLabel(latestLifecycleEvent?.state, r?.status)}
               </span>
             </div>
           </div>
@@ -3182,7 +3453,7 @@ function GuestSidebar({
         <div className="flex flex-col gap-3">
           {showLifecycleActions ? (
             <div className="grid grid-cols-1 gap-2">
-              {RESERVATION_LIFECYCLE_ACTIONS.map((action) => {
+              {lifecycleActions.map((action) => {
                 const Icon = action.icon;
                 const active = activeLifecycleState === action.state;
                 const pending = pendingLifecycleAction === action.state;
@@ -3454,6 +3725,367 @@ function formatOperationEventTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+const OUTCOME_TONES: Record<OperationalOutcomeKind, OperationalOutcomeTone> = {
+  confirmed: {
+    border: "border-emerald-500/22",
+    bg: "bg-emerald-500/[0.045]",
+    iconBg: "bg-emerald-500/14",
+    icon: "text-emerald-300",
+    badge: "border-emerald-500/24 bg-emerald-500/14 text-emerald-300",
+    dot: "bg-emerald-300",
+    amount: "text-emerald-50",
+    separator: "border-emerald-500/12",
+  },
+  payment_pending: {
+    border: "border-amber-500/24",
+    bg: "bg-amber-500/[0.05]",
+    iconBg: "bg-amber-500/14",
+    icon: "text-amber-300",
+    badge: "border-amber-500/24 bg-amber-500/14 text-amber-300",
+    dot: "bg-amber-300 animate-pulse",
+    amount: "text-amber-50",
+    separator: "border-amber-500/12",
+  },
+  cancelled: {
+    border: "border-rose-500/24",
+    bg: "bg-rose-500/[0.045]",
+    iconBg: "bg-rose-500/14",
+    icon: "text-rose-300",
+    badge: "border-rose-500/24 bg-rose-500/14 text-rose-300",
+    dot: "bg-rose-300",
+    amount: "text-white/78",
+    separator: "border-rose-500/12",
+  },
+  quote: {
+    border: "border-blue-500/22",
+    bg: "bg-blue-500/[0.045]",
+    iconBg: "bg-blue-500/14",
+    icon: "text-blue-300",
+    badge: "border-blue-500/24 bg-blue-500/14 text-blue-300",
+    dot: "bg-blue-300",
+    amount: "text-blue-50",
+    separator: "border-blue-500/12",
+  },
+  human_takeover: {
+    border: "border-violet-500/22",
+    bg: "bg-violet-500/[0.045]",
+    iconBg: "bg-violet-500/14",
+    icon: "text-violet-300",
+    badge: "border-violet-500/24 bg-violet-500/14 text-violet-300",
+    dot: "bg-violet-300 animate-pulse",
+    amount: "text-white/82",
+    separator: "border-violet-500/12",
+  },
+  closed_without_reservation: {
+    border: "border-white/[0.07]",
+    bg: "bg-white/[0.025]",
+    iconBg: "bg-white/[0.055]",
+    icon: "text-white/45",
+    badge: "border-white/[0.08] bg-white/[0.05] text-white/48",
+    dot: "bg-white/35",
+    amount: "text-white/70",
+    separator: "border-white/[0.05]",
+  },
+};
+
+function deriveOperationalOutcome(input: {
+  conv: Conversation;
+  reservation?: ConvReservation;
+  latestPaymentEvent?: NonNullable<OperationConversation["latestPaymentEvent"]>;
+  latestLifecycleEvent?: NonNullable<OperationConversation["latestLifecycleEvent"]>;
+  effectiveStatus: ConversationStatus;
+  requiresHuman?: boolean;
+  operationBookingValue?: number;
+}): OperationalOutcomeView {
+  const { conv, reservation: r, latestPaymentEvent, latestLifecycleEvent } = input;
+  const lifecycleState = latestLifecycleEvent?.state;
+  const paymentState = latestPaymentEvent?.state;
+
+  const isCancelled =
+    r?.status === "cancelled" ||
+    lifecycleState === "cancelled" ||
+    lifecycleState === "expired" ||
+    paymentState === "expired" ||
+    paymentState === "refunded";
+  const isPaid = paymentState === "paid" || r?.status === "confirmed" || lifecycleState === "confirmed";
+  const isConfirmed = !isCancelled && isPaid;
+  const isHuman =
+    !isCancelled &&
+    !isConfirmed &&
+    (input.requiresHuman || input.effectiveStatus === "human_takeover" || r?.status === "human_review");
+  const hasReservationRecord = Boolean(r || latestLifecycleEvent?.reservation_id || latestPaymentEvent?.reservation_id);
+  const isPaymentPending =
+    !isCancelled &&
+    !isConfirmed &&
+    !isHuman &&
+    (r?.status === "pending_payment" ||
+      lifecycleState === "payment_link_sent" ||
+      lifecycleState === "payment_pending" ||
+      paymentState === "payment_link_sent" ||
+      paymentState === "payment_pending" ||
+      paymentState === "failed");
+  const isQuote =
+    !isCancelled &&
+    !isConfirmed &&
+    !isHuman &&
+    !isPaymentPending &&
+    (r?.status === "quoted" ||
+      lifecycleState === "quote_prepared" ||
+      lifecycleState === "quote_sent" ||
+      conv.leadStatus === "quoted");
+
+  const kind: OperationalOutcomeKind = isCancelled
+    ? "cancelled"
+    : isConfirmed
+      ? "confirmed"
+      : isHuman
+        ? "human_takeover"
+        : isPaymentPending
+          ? "payment_pending"
+          : isQuote
+            ? "quote"
+            : "closed_without_reservation";
+
+  const amount = resolvePaymentAmount({
+    event: latestPaymentEvent,
+    reservation: r,
+    bookingValue: input.operationBookingValue,
+    conversationId: conv.id,
+    confirmed: isConfirmed,
+  });
+  const displayAmount = amount.value !== undefined && amount.value > 0 ? amount : undefined;
+  const ref = r?.ref ?? latestLifecycleEvent?.reservation_id ?? latestPaymentEvent?.reservation_id;
+  const shortRef = ref ? ref.slice(0, 12).toUpperCase() : undefined;
+  const idLabel = kind === "quote" ? "Teklif ID" : hasReservationRecord ? "Rezervasyon ID" : undefined;
+
+  const base = {
+    idLabel,
+    idValue: shortRef,
+    offerId: kind === "quote" ? shortRef : undefined,
+    room: r?.room,
+    checkIn: r?.checkIn,
+    checkOut: r?.checkOut,
+    guests: r?.guests,
+    nights: r?.nights,
+    amount: displayAmount,
+    tone: OUTCOME_TONES[kind],
+  };
+
+  if (kind === "cancelled") {
+    return {
+      ...base,
+      kind,
+      icon: AlertCircle,
+      title: "Rezervasyon iptal edildi",
+      description: "Bu konuşmanın operasyon sonucu iptal olarak kapandı.",
+      badge: "İptal",
+      lifecycleLabel: "İptal ile kapandı",
+      reservationLabel: "Rezervasyon iptal edildi",
+      paymentLabel: "Tahsilat kapatıldı",
+      canSendPaymentLink: false,
+    };
+  }
+
+  if (kind === "confirmed") {
+    return {
+      ...base,
+      kind,
+      icon: CheckCircle2,
+      title: "Operasyon tamamlandı",
+      description: "Rezervasyon ve ödeme yaşam döngüsü senkronize kapandı.",
+      badge: "Onaylandı",
+      lifecycleLabel: "Operasyon tamamlandı",
+      reservationLabel: "Rezervasyon onaylandı",
+      paymentLabel: "Ödeme onaylandı",
+      canSendPaymentLink: false,
+    };
+  }
+
+  if (kind === "human_takeover") {
+    return {
+      ...base,
+      kind,
+      icon: UserCheck,
+      title: "Operatör desteği aktif",
+      description: "Bu konuşma ekip müdahalesiyle operasyonel takipte.",
+      badge: "Destek aktif",
+      lifecycleLabel: "İnsan desteği aktif",
+      reservationLabel: r ? "Operatör incelemesinde" : "Rezervasyon beklemede",
+      paymentLabel: isPaid ? "Ödeme onaylandı" : "Operatör kontrolünde",
+      canSendPaymentLink: false,
+    };
+  }
+
+  if (kind === "payment_pending") {
+    return {
+      ...base,
+      kind,
+      icon: CreditCard,
+      title: "Ödeme onayı bekleniyor",
+      description: "Rezervasyon oluşturuldu, tahsilat kapanışı bekleniyor.",
+      badge: "Ödeme bekliyor",
+      lifecycleLabel: "Tahsilat bekleniyor",
+      reservationLabel: "Rezervasyon oluşturuldu",
+      paymentLabel: paymentState === "failed" ? "Ödeme sorunu var" : "Ödeme bekleniyor",
+      canSendPaymentLink: true,
+    };
+  }
+
+  if (kind === "quote") {
+    return {
+      ...base,
+      kind,
+      icon: FileText,
+      title: "Teklif gönderildi",
+      description: "Konuşma teklif aşamasında, rezervasyon henüz onaylanmadı.",
+      badge: "Teklif",
+      lifecycleLabel: "Teklif yanıt bekliyor",
+      reservationLabel: "Teklif aşamasında",
+      paymentLabel: "Ödeme başlatılmadı",
+      canSendPaymentLink: true,
+    };
+  }
+
+  return {
+    ...base,
+    kind,
+    icon: Inbox,
+    title: "Rezervasyonsuz kapandı",
+    description: "Bu konuşmada aktif teklif, ödeme veya rezervasyon oluşmadı.",
+    badge: "Kapandı",
+    lifecycleLabel: "Operasyon kapandı",
+    reservationLabel: "Rezervasyon oluşmadı",
+    paymentLabel: "Ödeme yok",
+    canSendPaymentLink: false,
+  };
+}
+
+function visibleLifecycleActions(outcome: OperationalOutcomeView): ReservationLifecycleAction[] {
+  if (
+    outcome.kind === "confirmed" ||
+    outcome.kind === "cancelled" ||
+    outcome.kind === "closed_without_reservation"
+  ) {
+    return [];
+  }
+
+  if (outcome.kind === "payment_pending") {
+    return RESERVATION_LIFECYCLE_ACTIONS.filter((action) =>
+      ["payment_link_sent", "payment_pending", "confirmed", "cancelled", "human_review_required"].includes(action.state)
+    );
+  }
+
+  if (outcome.kind === "quote") {
+    return RESERVATION_LIFECYCLE_ACTIONS.filter((action) =>
+      ["payment_link_sent", "payment_pending", "cancelled", "human_review_required"].includes(action.state)
+    );
+  }
+
+  return RESERVATION_LIFECYCLE_ACTIONS.filter((action) =>
+    ["confirmed", "cancelled"].includes(action.state)
+  );
+}
+
+function OperationalOutcomeCard({ outcome }: { outcome: OperationalOutcomeView }) {
+  const Icon = outcome.icon;
+
+  return (
+    <div className="border-b border-white/[0.03] px-5 py-6">
+      <SidebarLabel>Operasyon sonucu</SidebarLabel>
+      <div className={cn("rounded-xl border p-4 transition-colors duration-500", outcome.tone.border, outcome.tone.bg)}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 gap-3">
+            <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", outcome.tone.iconBg)}>
+              <Icon className={cn("h-4 w-4", outcome.tone.icon)} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold leading-tight text-white/90">{outcome.title}</p>
+              <p className="mt-1 text-[10px] leading-relaxed text-white/42">{outcome.description}</p>
+            </div>
+          </div>
+          <span className={cn("inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold", outcome.tone.badge)}>
+            <span className={cn("h-1.5 w-1.5 rounded-full", outcome.tone.dot)} />
+            {outcome.badge}
+          </span>
+        </div>
+
+        {(outcome.idValue || outcome.room || outcome.amount) ? (
+          <div className={cn("mt-4 border-t pt-3", outcome.tone.separator)}>
+            <div className="space-y-2.5 text-[11px]">
+              {outcome.idValue && outcome.idLabel ? (
+                <OutcomeRow label={outcome.idLabel} value={`#${outcome.idValue}`} />
+              ) : null}
+              {outcome.offerId && outcome.idLabel !== "Teklif ID" ? (
+                <OutcomeRow label="Teklif ID" value={`#${outcome.offerId}`} />
+              ) : null}
+              {outcome.room ? <OutcomeRow label="Oda / paket" value={outcome.room} /> : null}
+            </div>
+
+            {(outcome.checkIn || outcome.checkOut || outcome.guests || outcome.nights) ? (
+              <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
+                {outcome.checkIn ? (
+                  <OutcomeMetric icon={CalendarDays} label="Giriş" value={outcome.checkIn} />
+                ) : null}
+                {outcome.checkOut ? (
+                  <OutcomeMetric icon={CalendarDays} label="Çıkış" value={outcome.checkOut} />
+                ) : null}
+                {outcome.guests ? (
+                  <OutcomeMetric icon={Users} label="Misafir" value={String(outcome.guests)} />
+                ) : null}
+                {outcome.nights ? (
+                  <OutcomeMetric icon={Moon} label="Gece" value={String(outcome.nights)} />
+                ) : null}
+              </div>
+            ) : null}
+
+            {outcome.amount ? (
+              <div className={cn("mt-4 flex items-baseline justify-between border-t pt-3", outcome.tone.separator)}>
+                <span className="text-[10px] font-medium text-white/34">Toplam tutar</span>
+                <span className={cn("text-[21px] font-bold tabular-nums tracking-tight", outcome.tone.amount)}>
+                  {outcome.amount.label}
+                </span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className={cn("mt-4 space-y-2 border-t pt-3 text-[11px]", outcome.tone.separator)}>
+          <OutcomeRow label="Ödeme durumu" value={outcome.paymentLabel} strong />
+          <OutcomeRow label="Rezervasyon durumu" value={outcome.reservationLabel} strong />
+          <OutcomeRow label="Yaşam döngüsü" value={outcome.lifecycleLabel} strong />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OutcomeRow({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="shrink-0 text-white/34">{label}</span>
+      <span className={cn("min-w-0 text-right text-white/68", strong && "font-semibold text-white/78")}>{value}</span>
+    </div>
+  );
+}
+
+function OutcomeMetric({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-lg border border-white/[0.045] bg-white/[0.025] px-2.5 py-2">
+      <Icon className="mb-1 h-3 w-3 text-white/35" />
+      <p className="text-[9px] text-white/32">{label}</p>
+      <p className="font-medium text-white/76">{value}</p>
+    </div>
+  );
 }
 
 function SidebarLabel({ children }: { children: React.ReactNode }) {
