@@ -125,11 +125,14 @@ export function inferReservationStage(
   thread: ConversationThread,
   reservation?: ConvReservation
 ): ReservationStage {
-  if (thread.flags.humanTakeover || thread.flags.vipEscalation) return "staff_assist";
-  if (reservation?.status === "confirmed" || thread.status === "resolved") return "confirmed";
-  if (reservation?.status === "pending_payment" || thread.flags.paymentRisk) return "payment";
+  if (reservation?.status === "confirmed") return "confirmed";
+  if (reservation?.status === "pending_payment") return "payment";
   if (reservation?.status === "quoted") return "offer";
-  if (thread.unread > 0 && !reservation) return "inquiry";
+  if (reservation?.status === "cancelled" || reservation?.status === "human_review") return "staff_assist";
+  if (thread.flags.humanTakeover || thread.flags.vipEscalation) return "staff_assist";
+  if (thread.status === "resolved") return "confirmed";
+  if (thread.flags.paymentRisk) return "payment";
+  if (thread.unread > 0) return "inquiry";
   return "availability";
 }
 
