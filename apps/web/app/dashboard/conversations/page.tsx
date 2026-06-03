@@ -584,11 +584,18 @@ export default function ConversationsPage() {
     const operationById = new Map(
       opPanel.rawConversations.map((conversation) => [conversation.id, conversation])
     );
-    return allConvs.map((conversation) => ({
-      id: conversation.id,
-      hotelId: operationById.get(conversation.id)?.hotelId ?? "demo-hotel",
-    }));
-  }, [allConvs, opPanel.rawConversations]);
+    // Deterministic demo: the static seed threads (c1–c8 in CONVERSATIONS, incl. Hans c2 /
+    // Sarah c4 / Mohammed c8) are the source of truth and must never be overridden by
+    // persisted lifecycle/payment replays — that is what reintroduced the
+    // payment_pending → confirmed flicker and let Hans auto-confirm after a refresh. Only
+    // live / ingested conversations hydrate from the server.
+    return allConvs
+      .filter((conversation) => !staticIds.has(conversation.id))
+      .map((conversation) => ({
+        id: conversation.id,
+        hotelId: operationById.get(conversation.id)?.hotelId ?? "demo-hotel",
+      }));
+  }, [allConvs, opPanel.rawConversations, staticIds]);
 
   const hasLocalStatus = selected in localStatuses;
   const effectiveStatus: ConversationStatus = localStatuses[selected] ?? selectedConv?.status;
@@ -659,7 +666,10 @@ export default function ConversationsPage() {
           setOperationFeed(data?.ok && Array.isArray(data.events) ? data.events : []);
         }
 
-        if (isLivePanel || selectedOperation || selected.startsWith("demo-manychat-")) {
+        if (
+          !staticIds.has(selected) &&
+          (isLivePanel || selectedOperation || selected.startsWith("demo-manychat-"))
+        ) {
           const lifecycleParams = new URLSearchParams();
           const hotelId = selectedOperation?.hotelId ?? "demo-hotel";
           lifecycleParams.set("hotel_id", hotelId);
@@ -2324,6 +2334,16 @@ function normalizeConversationReservation(
   const lifecycleState = input.lifecycleEvent?.state;
   const paymentState = input.paymentEvent?.state;
 
+  // Payment lifecycle is authoritative for "collected". A reservation being created /
+  // optioned (or carrying a stale confirmed flag) does NOT mean the money was taken — while
+  // the latest payment event says link-sent / pending / failed, the reservation must read as
+  // pending_payment, never confirmed. This keeps the center card and the right sidebar in
+  // agreement (e.g. Hans payment-risk).
+  const paymentNotCollected =
+    paymentState === "payment_link_sent" ||
+    paymentState === "payment_pending" ||
+    paymentState === "failed";
+
   if (
     reservation.status === "cancelled" ||
     lifecycleState === "cancelled" ||
@@ -2335,10 +2355,11 @@ function normalizeConversationReservation(
   }
 
   if (
-    input.locallyConfirmed ||
-    reservation.status === "confirmed" ||
-    lifecycleState === "confirmed" ||
-    paymentState === "paid"
+    !paymentNotCollected &&
+    (input.locallyConfirmed ||
+      reservation.status === "confirmed" ||
+      lifecycleState === "confirmed" ||
+      paymentState === "paid")
   ) {
     return { ...reservation, status: "confirmed" };
   }
@@ -3809,7 +3830,15 @@ function deriveOperationalOutcome(input: {
     lifecycleState === "expired" ||
     paymentState === "expired" ||
     paymentState === "refunded";
-  const isPaid = paymentState === "paid" || r?.status === "confirmed" || lifecycleState === "confirmed";
+  // Payment lifecycle is authoritative: a created/optioned (or stale-confirmed) reservation
+  // is NOT "paid" while the latest payment event is still link-sent / pending / failed.
+  const paymentNotCollected =
+    paymentState === "payment_link_sent" ||
+    paymentState === "payment_pending" ||
+    paymentState === "failed";
+  const isPaid =
+    !paymentNotCollected &&
+    (paymentState === "paid" || r?.status === "confirmed" || lifecycleState === "confirmed");
   const isConfirmed = !isCancelled && isPaid;
   const isHuman =
     !isCancelled &&
@@ -3919,16 +3948,19 @@ function deriveOperationalOutcome(input: {
   }
 
   if (kind === "payment_pending") {
+    const paymentFailed = paymentState === "failed";
     return {
       ...base,
       kind,
       icon: CreditCard,
-      title: "Ödeme onayı bekleniyor",
-      description: "Rezervasyon oluşturuldu, tahsilat kapanışı bekleniyor.",
-      badge: "Ödeme bekliyor",
-      lifecycleLabel: "Tahsilat bekleniyor",
+      title: paymentFailed ? "Ödeme kurtarma aktif" : "Ödeme onayı bekleniyor",
+      description: paymentFailed
+        ? "Rezervasyon oluşturuldu, ödeme başarısız — kurtarma akışı sürüyor."
+        : "Rezervasyon oluşturuldu, tahsilat kapanışı bekleniyor.",
+      badge: paymentFailed ? "Kurtarma aktif" : "Ödeme bekliyor",
+      lifecycleLabel: paymentFailed ? "Kurtarma aktif" : "Tahsilat bekleniyor",
       reservationLabel: "Rezervasyon oluşturuldu",
-      paymentLabel: paymentState === "failed" ? "Ödeme sorunu var" : "Ödeme bekleniyor",
+      paymentLabel: paymentFailed ? "Ödeme başarısız" : "Ödeme bekleniyor",
       canSendPaymentLink: true,
     };
   }

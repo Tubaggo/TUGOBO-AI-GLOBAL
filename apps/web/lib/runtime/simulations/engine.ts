@@ -30,6 +30,16 @@ export type SimulationController = {
   stop: () => void;
 };
 
+/**
+ * Master switch for the ambient random simulation.
+ *
+ * Disabled for the sales demo: random ticks caused payment/recovery state to jump and
+ * payments/operations to mutate while a prospect was browsing. With this off the demo is
+ * fully deterministic (seed state only); manual actions still dispatch normally. Flip to
+ * `true` to restore ambient liveliness.
+ */
+const SIMULATION_ENABLED: boolean = false;
+
 /** Lightweight client-side operational activity — enterprise pacing, no flashy effects */
 export function startOperationalSimulation(
   onTick: (type: OperationalEventType) => void
@@ -47,7 +57,10 @@ export function startOperationalSimulation(
     }, delayMs);
   };
 
-  schedule();
+  // Deterministic demo: never schedule ambient mutations. Return an inert controller.
+  if (SIMULATION_ENABLED) {
+    schedule();
+  }
 
   return {
     stop: () => {
