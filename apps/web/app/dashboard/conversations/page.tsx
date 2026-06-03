@@ -530,6 +530,21 @@ export default function ConversationsPage() {
   const [toast, setToast] = useState<ToastData | null>(null);
   const [operationFeed, setOperationFeed] = useState<OperationFeedItem[]>([]);
 
+  // Hans (c2) is the canonical deterministic payment-pending / payment-recovery demo
+  // scenario. The global operation feed can contain stale "Ödeme alındı" /
+  // "Rezervasyon onaylandı" / "Operasyon tamamlandı" events from prior demo runs
+  // or from other conversations — those would contradict Hans' current lifecycle
+  // and confuse the demo. Suppress them only for c2; Sarah and others are unaffected.
+  const visibleOperationFeed = useMemo(() => {
+    if (selected !== "c2") return operationFeed;
+    const STALE_HANS_TITLES = new Set([
+      "Ödeme alındı",
+      "Rezervasyon onaylandı",
+      "Operasyon tamamlandı",
+    ]);
+    return operationFeed.filter((event) => !STALE_HANS_TITLES.has(event.title));
+  }, [operationFeed, selected]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedRef = useRef(selected);
@@ -2164,7 +2179,7 @@ export default function ConversationsPage() {
                 })
               : undefined
           }
-          operationFeed={operationFeed}
+          operationFeed={visibleOperationFeed}
         />
         </div>
       ) : null}
