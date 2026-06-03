@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Search, ChevronRight } from "lucide-react";
@@ -42,14 +42,25 @@ export default function ReservationsPage() {
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(reservations[1]?.id ?? null);
 
-  const filtered = reservations.filter((r) => {
-    const matchTab = tab === "all" || r.currentStage === tab;
-    const matchSearch =
-      !search ||
-      r.guest.toLowerCase().includes(search.toLowerCase()) ||
-      r.room.toLowerCase().includes(search.toLowerCase());
-    return matchTab && matchSearch;
-  });
+  const filtered = useMemo(() => {
+    const needle = search.toLowerCase();
+    return reservations.filter((r) => {
+      const matchTab = tab === "all" || r.currentStage === tab;
+      const matchSearch =
+        !needle ||
+        r.guest.toLowerCase().includes(needle) ||
+        r.room.toLowerCase().includes(needle);
+      return matchTab && matchSearch;
+    });
+  }, [reservations, tab, search]);
+
+  const pendingApprovalCount = useMemo(
+    () =>
+      reservations.filter(
+        (r) => r.currentStage === "quote" || r.currentStage === "payment_pending"
+      ).length,
+    [reservations]
+  );
 
   return (
     <div className="flex-1 overflow-auto">
@@ -61,15 +72,7 @@ export default function ReservationsPage() {
           <SummaryCard label={t("summary.inProcess")} value={mounted ? String(reservations.length) : "—"} />
           <SummaryCard
             label={t("summary.pendingApproval")}
-            value={
-              mounted
-                ? String(
-                    reservations.filter(
-                      (r) => r.currentStage === "quote" || r.currentStage === "payment_pending"
-                    ).length
-                  )
-                : "—"
-            }
+            value={mounted ? String(pendingApprovalCount) : "—"}
           />
           <SummaryCard
             label={t("summary.confirmedValue")}
@@ -208,17 +211,18 @@ function ReservationsList({
   );
 }
 
+const STAGE_PILL_COLORS: Partial<Record<RevenueLifecycleStage, string>> = {
+  payment_risk: "bg-amber-500/15 text-amber-400 border-amber-500/20",
+  recovery: "bg-violet-500/15 text-violet-400 border-violet-500/20",
+  confirmation: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
+};
+
 function StagePill({ stage }: { stage: RevenueLifecycleStage }) {
-  const colors: Partial<Record<RevenueLifecycleStage, string>> = {
-    payment_risk: "bg-amber-500/15 text-amber-400 border-amber-500/20",
-    recovery: "bg-violet-500/15 text-violet-400 border-violet-500/20",
-    confirmation: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
-  };
   return (
     <span
       className={cn(
         "rounded-full border px-2 py-0.5 text-[10px] font-medium",
-        colors[stage] ?? "border-white/[0.08] bg-white/[0.05] text-white/50"
+        STAGE_PILL_COLORS[stage] ?? "border-white/[0.08] bg-white/[0.05] text-white/50"
       )}
     >
       {lifecycleStageLabel(stage)}

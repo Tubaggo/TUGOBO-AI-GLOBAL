@@ -24,12 +24,25 @@ export default function DashboardPaymentsPage() {
     [reservations]
   );
 
-  const pending = paymentReservations.filter(
-    (r) => r.currentStage === "payment_pending" || r.currentStage === "quote"
+  const pending = useMemo(
+    () =>
+      paymentReservations.filter(
+        (r) => r.currentStage === "payment_pending" || r.currentStage === "quote"
+      ),
+    [paymentReservations]
   );
-  const atRisk = paymentReservations.filter((r) => r.currentStage === "payment_risk");
-  const recoveries = journeys.filter(
-    (j) => j.kind === "failed_payment" || j.kind === "abandoned_booking"
+  const atRisk = useMemo(
+    () => paymentReservations.filter((r) => r.currentStage === "payment_risk"),
+    [paymentReservations]
+  );
+  const recoveries = useMemo(
+    () =>
+      journeys.filter((j) => j.kind === "failed_payment" || j.kind === "abandoned_booking"),
+    [journeys]
+  );
+  const activeRecoveryCount = useMemo(
+    () => recoveries.filter((j) => j.status === "active").length,
+    [recoveries]
   );
 
   const hasAny = paymentReservations.length > 0 || recoveries.length > 0;
@@ -51,7 +64,7 @@ export default function DashboardPaymentsPage() {
           <StatCard
             icon={Wallet}
             label="Aktif müdahale"
-            value={mounted ? String(recoveries.filter((j) => j.status === "active").length) : "—"}
+            value={mounted ? String(activeRecoveryCount) : "—"}
             tone="amber"
           />
         </div>

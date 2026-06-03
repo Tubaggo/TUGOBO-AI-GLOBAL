@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useCallback, useMemo, useState, useRef, useEffect } from "react";
 import {
   Search,
   Bot,
@@ -563,13 +563,17 @@ export default function ConversationsPage() {
   const { isLoading: queueLoading } = usePanelStagedLoad("queue", 220);
   const typingPhase = resolveTypingPhase(opsPhase);
 
-  function selectConversation(id: string) {
-    setSelected(id);
-    syncSelectedConversation(id);
-    opPanel.clearPulse(id);
-    setMobilePane("chat");
-    setTabletSummaryOpen(false);
-  }
+  const opPanelClearPulse = opPanel.clearPulse;
+  const selectConversation = useCallback(
+    (id: string) => {
+      setSelected(id);
+      syncSelectedConversation(id);
+      opPanelClearPulse(id);
+      setMobilePane("chat");
+      setTabletSummaryOpen(false);
+    },
+    [opPanelClearPulse, syncSelectedConversation]
+  );
 
   // Keep ref in sync for stale-closure safety in timeouts
   useEffect(() => {
@@ -588,13 +592,28 @@ export default function ConversationsPage() {
     () => [...operationConvs, ...demoConversations, ...CONVERSATIONS],
     [demoConversations, operationConvs]
   );
-  const selectedConv = allConvs.find((c) => c.id === selected);
-  const thread =
-    CHAT_THREADS[selected] ??
-    demoChatThreads[selected] ??
-    opPanel.threadsById[selected];
-  const selectedOperation = opPanel.getOperationSummary(selected);
-  const allConversationIds = allConvs.map((conversation) => conversation.id).join("|");
+  const selectedConv = useMemo(
+    () => allConvs.find((c) => c.id === selected),
+    [allConvs, selected]
+  );
+  const thread = useMemo(
+    () =>
+      CHAT_THREADS[selected] ??
+      demoChatThreads[selected] ??
+      opPanel.threadsById[selected],
+    [demoChatThreads, opPanel.threadsById, selected]
+  );
+  // Memoized so identity is stable across renders — this drives the loadOperationFeed
+  // effect's dependency list; without memoization the 6s polling interval was being
+  // torn down and recreated on every render.
+  const selectedOperation = useMemo(
+    () => opPanel.rawConversations.find((c) => c.id === selected),
+    [opPanel.rawConversations, selected]
+  );
+  const allConversationIds = useMemo(
+    () => allConvs.map((conversation) => conversation.id).join("|"),
+    [allConvs]
+  );
   const lifecycleHydrationTargets = useMemo(() => {
     const operationById = new Map(
       opPanel.rawConversations.map((conversation) => [conversation.id, conversation])
@@ -620,40 +639,65 @@ export default function ConversationsPage() {
     selectedOperation?.latestLifecycleEvent ?? localLifecycleEvents[selected];
   const selectedPaymentEvent =
     selectedOperation?.latestPaymentEvent ?? localPaymentEvents[selected];
-  const selectedAiSuggestion =
-    (selectedPaymentEvent ? paymentSuggestion(selectedPaymentEvent.state) : undefined) ??
-    selectedOperation?.aiSuggestion ??
-    (selectedLifecycleEvent ? lifecycleSuggestion(selectedLifecycleEvent.state) : undefined);
-  const selectedConversationForPanel = selectedConv
-    ? {
-        ...selectedConv,
-        status: effectiveStatus,
-        leadStatus: effectiveLeadStatus ?? selectedConv.leadStatus,
-      }
-    : undefined;
-  const allMessages: ChatMsg[] = [...(thread?.messages ?? []), ...(localMessages[selected] ?? [])];
+  const selectedAiSuggestion = useMemo(
+    () =>
+      (selectedPaymentEvent ? paymentSuggestion(selectedPaymentEvent.state) : undefined) ??
+      selectedOperation?.aiSuggestion ??
+      (selectedLifecycleEvent ? lifecycleSuggestion(selectedLifecycleEvent.state) : undefined),
+    [selectedLifecycleEvent, selectedOperation, selectedPaymentEvent]
+  );
+  const selectedConversationForPanel = useMemo(
+    () =>
+      selectedConv
+        ? {
+            ...selectedConv,
+            status: effectiveStatus,
+            leadStatus: effectiveLeadStatus ?? selectedConv.leadStatus,
+          }
+        : undefined,
+    [selectedConv, effectiveStatus, effectiveLeadStatus]
+  );
+  const allMessages: ChatMsg[] = useMemo(
+    () => [...(thread?.messages ?? []), ...(localMessages[selected] ?? [])],
+    [thread, localMessages, selected]
+  );
   const isAiTyping = hasLocalStatus
     ? (localTyping[selected] ?? false)
     : (thread?.aiTyping ?? false);
 
   // Reservation: localReservations (demo / manual) takes priority over thread data
   const rawReservation = localReservations[selected] ?? thread?.reservation;
-  const operationReservation = selectedOperation?.reservation
-    ? operationReservationToPanel(
-        selectedOperation.reservation,
-        selectedConv?.contact.name,
-        selectedOperation.bookingValue
-      )
-    : undefined;
+  const operationReservation = useMemo(
+    () =>
+      selectedOperation?.reservation
+        ? operationReservationToPanel(
+            selectedOperation.reservation,
+            selectedConv?.contact.name,
+            selectedOperation.bookingValue
+          )
+        : undefined,
+    [selectedOperation, selectedConv?.contact.name]
+  );
   const baseReservation = rawReservation ?? operationReservation;
-  const effectiveReservation: ConvReservation | undefined = baseReservation
-    ? normalizeConversationReservation(baseReservation, {
-        locallyConfirmed: confirmedReservations[selected],
-        lifecycleEvent: selectedLifecycleEvent,
-        paymentEvent: selectedPaymentEvent,
-        effectiveStatus,
-      })
-    : undefined;
+  const effectiveReservation: ConvReservation | undefined = useMemo(
+    () =>
+      baseReservation
+        ? normalizeConversationReservation(baseReservation, {
+            locallyConfirmed: confirmedReservations[selected],
+            lifecycleEvent: selectedLifecycleEvent,
+            paymentEvent: selectedPaymentEvent,
+            effectiveStatus,
+          })
+        : undefined,
+    [
+      baseReservation,
+      confirmedReservations,
+      effectiveStatus,
+      selected,
+      selectedLifecycleEvent,
+      selectedPaymentEvent,
+    ]
+  );
 
   const selectedReservationStatus = effectiveReservation?.status;
 
