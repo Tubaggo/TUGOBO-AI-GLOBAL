@@ -16,6 +16,52 @@ import {
   AlertTriangle,
   Zap,
 } from "lucide-react";
+
+// Reservation pipeline funnel — visual parity with /demo/otel-paneli's
+// "Rezervasyon süreci" section. Static, representative stage counts; no runtime
+// or schema change. Mirrors the operational view of the AI-managed pipeline.
+const RESERVATION_PIPELINE_STAGES = [
+  {
+    key: "inquiry",
+    labelEn: "Yeni talep",
+    label: "Talep",
+    count: 6,
+    color: "text-slate-300",
+    ring: "border-white/[0.08] bg-white/[0.03]",
+  },
+  {
+    key: "qualified",
+    labelEn: "Uygunluk",
+    label: "Nitelendirildi",
+    count: 4,
+    color: "text-violet-300",
+    ring: "border-violet-500/20 bg-violet-500/[0.06]",
+  },
+  {
+    key: "offer",
+    labelEn: "Teklif gönderildi",
+    label: "Teklif",
+    count: 3,
+    color: "text-blue-300",
+    ring: "border-blue-500/20 bg-blue-500/[0.06]",
+  },
+  {
+    key: "payment",
+    labelEn: "Ödeme bekleniyor",
+    label: "Ödeme",
+    count: 2,
+    color: "text-amber-300",
+    ring: "border-amber-500/20 bg-amber-500/[0.06]",
+  },
+  {
+    key: "confirmed",
+    labelEn: "Onaylandı",
+    label: "Onaylı",
+    count: 11,
+    color: "text-emerald-300",
+    ring: "border-emerald-500/25 bg-emerald-500/[0.08]",
+  },
+] as const;
 import {
   useOperationalRuntime,
   selectRevenueMetrics,
@@ -146,6 +192,7 @@ export default function OverviewPage() {
         <MotionRuntimeOverviewExecutiveStrip items={executiveStrip} />
         <MotionOverviewMetricGrid metricCards={metricCards} />
         <OverviewGraphPanel />
+        <ReservationPipelineSection />
         <div className="mb-6 grid grid-cols-1 gap-5 lg:grid-cols-2">
           <div className="rounded-xl border border-white/[0.06] bg-zinc-900 p-5">
             <div className="mb-4 flex items-center justify-between">
@@ -416,6 +463,51 @@ function MotionOverviewConversationRow({ c }: { c: ReturnType<typeof selectConve
             <FinancialAttributionBadge key={a.kind} attribution={a} compact />
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ReservationPipelineSection() {
+  return (
+    <div className="mb-6 rounded-xl border border-white/[0.06] bg-zinc-900 p-5">
+      <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/28">
+            Rezervasyon süreci
+          </p>
+          <h2 className="mt-0.5 text-sm font-semibold text-white">
+            Aşama dağılımı · operasyon görünümü
+          </h2>
+        </div>
+        <Link
+          href="/app/reservations"
+          className="shrink-0 text-xs text-blue-400 transition-colors hover:text-blue-300"
+        >
+          Süreci aç →
+        </Link>
+      </div>
+      <div className="flex flex-col gap-3 md:flex-row md:items-stretch md:gap-2">
+        {RESERVATION_PIPELINE_STAGES.map((st, i) => (
+          <div key={st.key} className="flex min-w-0 flex-1 items-stretch gap-2 md:flex-row">
+            <div
+              className={`flex flex-1 flex-col rounded-xl border px-3 py-3 md:px-3.5 md:py-3.5 ${st.ring}`}
+            >
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-white/22">
+                {st.labelEn}
+              </span>
+              <div className="mt-1 flex items-baseline justify-between gap-2">
+                <span className={`text-lg font-bold tabular-nums ${st.color}`}>{st.count}</span>
+                <span className="truncate text-[11px] font-medium text-white/35">{st.label}</span>
+              </div>
+            </div>
+            {i < RESERVATION_PIPELINE_STAGES.length - 1 ? (
+              <div className="hidden shrink-0 items-center justify-center px-0.5 md:flex">
+                <ChevronRight className="h-4 w-4 text-white/10" aria-hidden />
+              </div>
+            ) : null}
+          </div>
+        ))}
       </div>
     </div>
   );
