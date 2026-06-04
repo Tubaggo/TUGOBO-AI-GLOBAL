@@ -10,32 +10,17 @@ import type {
   AiRespondResult,
   HotelAssistantResponse,
 } from "./types";
-import {
-  completeWithOpenAI,
-  isOpenAiConfigured,
-  type ProviderCompletionInput,
-} from "./providers/openai";
-import { completeWithDeepSeek, isDeepSeekConfigured } from "./providers/deepseek";
-import { completeWithClaude, isClaudeConfigured } from "./providers/claude";
-import { completeWithGemini, isGeminiConfigured } from "./providers/gemini";
-import { completeWithMock } from "./providers/mock-provider";
+import { getActiveTugoboProvider } from "./provider-registry";
+import type { ProviderRuntimeConfig } from "./providers";
 
-type AiEnvConfig = {
+type AiEnvConfig = ProviderRuntimeConfig & {
   // TUGOBO_AI_PROVIDER takes precedence; AI_PROVIDER is the legacy fallback.
   provider: AiProviderName;
-  openaiApiKey?: string;
-  openaiModel: string;
-  deepseekApiKey?: string;
-  deepseekModel: string;
-  deepseekBaseUrl?: string;
-  anthropicApiKey?: string;
-  anthropicModel: string;
-  geminiApiKey?: string;
-  geminiModel: string;
 };
 
+const DEFAULT_PROVIDER_TIMEOUT_MS = 20_000;
+
 export function resolveAiEnv(): AiEnvConfig {
-  // TUGOBO_AI_PROVIDER is the canonical variable; AI_PROVIDER kept for backward compat.
   const rawProvider = (
     process.env.TUGOBO_AI_PROVIDER ?? process.env.AI_PROVIDER
   )?.toLowerCase();
@@ -65,50 +50,20 @@ export function resolveAiEnv(): AiEnvConfig {
   };
 }
 
-function pickProvider(config: AiEnvConfig): AiProviderName | null {
-  if (config.provider === "mock") return "mock";
-  if (config.provider === "deepseek" && isDeepSeekConfigured(config.deepseekApiKey))
-    return "deepseek";
-  if (config.provider === "claude" && isClaudeConfigured(config.anthropicApiKey))
-    return "claude";
-  if (config.provider === "gemini" && isGeminiConfigured(config.geminiApiKey))
-    return "gemini";
-  // Fallback chain for real providers when preferred is not configured.
-  if (isOpenAiConfigured(config.openaiApiKey)) return "openai";
-  if (isDeepSeekConfigured(config.deepseekApiKey)) return "deepseek";
-  if (isClaudeConfigured(config.anthropicApiKey)) return "claude";
-  if (isGeminiConfigured(config.geminiApiKey)) return "gemini";
-  return null;
-}
-
-async function runCompletion(
-  provider: AiProviderName,
-  input: ProviderCompletionInput,
-  config: AiEnvConfig
-) {
-  if (provider === "mock") {
-    return completeWithMock(input);
-  }
-  if (provider === "deepseek") {
-    if (!config.deepseekApiKey) throw new Error("deepseek_not_configured");
-    return completeWithDeepSeek(
-      input,
-      config.deepseekApiKey,
-      config.deepseekModel,
-      config.deepseekBaseUrl
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label}_timeout`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
     );
-  }
-  if (provider === "claude") {
-    if (!config.anthropicApiKey) throw new Error("claude_not_configured");
-    return completeWithClaude(input, config.anthropicApiKey, config.anthropicModel);
-  }
-  if (provider === "gemini") {
-    if (!config.geminiApiKey) throw new Error("gemini_not_configured");
-    return completeWithGemini(input, config.geminiApiKey, config.geminiModel);
-  }
-  // Default: openai
-  if (!config.openaiApiKey) throw new Error("openai_not_configured");
-  return completeWithOpenAI(input, config.openaiApiKey, config.openaiModel);
+  });
 }
 
 export async function generateHotelAssistantResponse(
@@ -116,9 +71,9 @@ export async function generateHotelAssistantResponse(
 ): Promise<AiRespondResult> {
   const started = Date.now();
   const config = resolveAiEnv();
-  const provider = pickProvider(config);
+  const adapter = getActiveTugoboProvider();
 
-  if (!provider) {
+  if (!adapter) {
     const fallback = buildFallbackResponse(request.mode, request.guest?.language ?? "tr");
     return { ok: false, error: "provider_unavailable", fallback };
   }
@@ -127,7 +82,11 @@ export async function generateHotelAssistantResponse(
   const user = buildHotelAssistantUserPayload(request);
 
   try {
-    const completion = await runCompletion(provider, { system, user }, config);
+    const completion = await withTimeout(
+      adapter.complete({ system, user }, config),
+      DEFAULT_PROVIDER_TIMEOUT_MS,
+      adapter.name
+    );
     const parsed = parseAssistantResponse(completion.raw);
 
     if (!parsed) {
@@ -159,7 +118,7 @@ export async function generateHotelAssistantResponse(
   } catch (e) {
     console.error("[AI_CLIENT] completion_failed", {
       message: e instanceof Error ? e.message : String(e),
-      provider,
+      provider: adapter.name,
     });
     const fallback = buildFallbackResponse(request.mode, request.guest?.language ?? "tr");
     return { ok: false, error: "exception", fallback };

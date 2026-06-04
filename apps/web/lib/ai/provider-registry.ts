@@ -3,12 +3,10 @@
 // This module is the single integration point between the TUGOBO runtime and
 // the AI provider layer. Import from here — not from individual provider files.
 //
-// Current state (AI-1): Infrastructure only. The registry resolves the active
-// provider based on ENV but is NOT yet wired into the conversation flow.
-//
-// TODO (AI-2 Sprint): Call getActiveTugoboProvider() inside the conversation
-// response pipeline to replace the direct generateHotelAssistantResponse() call
-// with a provider-aware response loop.
+// AI-2 status: wired. aiClient.generateHotelAssistantResponse() resolves its
+// active provider through getActiveTugoboProvider() — the conversation pipeline
+// (/api/ai/respond → generateHotelAssistantResponse) flows through here.
+// The adapter is invoked for text completion only — no tools, no side effects.
 
 import { resolveConfiguredProvider, type ProviderAdapter } from "./providers";
 import type { AiProviderName } from "./types";

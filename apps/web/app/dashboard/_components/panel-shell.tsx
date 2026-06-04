@@ -28,7 +28,7 @@ export function PanelShell({
   return (
     <PanelIntlProvider locale={locale}>
       {banner ? (
-        <div className="flex min-h-screen flex-col bg-zinc-950">
+        <div className="flex h-[100dvh] flex-col overflow-hidden bg-zinc-950">
           {banner}
           <div className="flex min-h-0 flex-1 overflow-hidden">{body}</div>
         </div>
