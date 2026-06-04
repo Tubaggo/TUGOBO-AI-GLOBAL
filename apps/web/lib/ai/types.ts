@@ -51,7 +51,7 @@ export const AI_PAYMENT_STATUSES = [
 
 export type AiPaymentStatus = (typeof AI_PAYMENT_STATUSES)[number];
 
-export type AiProviderName = "openai" | "deepseek";
+export type AiProviderName = "openai" | "deepseek" | "claude" | "gemini" | "mock";
 
 export type AiOperationMode = "demo" | "live";
 

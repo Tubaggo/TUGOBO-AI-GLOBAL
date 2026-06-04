@@ -38,5 +38,5 @@ export async function completeWithClaude(
   const raw = data.content?.find((c) => c.type === "text")?.text?.trim();
   if (!raw) throw new Error("empty_claude_completion");
 
-  return { raw, provider: "openai", model: `claude:${model}` };
+  return { raw, provider: "claude", model: `claude:${model}` };
 }

@@ -33,5 +33,5 @@ export async function completeWithGemini(
   const raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
   if (!raw) throw new Error("empty_gemini_completion");
 
-  return { raw, provider: "openai", model: `gemini:${model}` };
+  return { raw, provider: "gemini", model: `gemini:${model}` };
 }

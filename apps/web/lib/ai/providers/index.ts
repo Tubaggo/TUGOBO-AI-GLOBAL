@@ -5,17 +5,15 @@ import {
   type ProviderCompletionInput,
   type ProviderCompletionResult,
 } from "./openai";
-import {
-  completeWithDeepSeek,
-  isDeepSeekConfigured,
-} from "./deepseek";
+import { completeWithDeepSeek, isDeepSeekConfigured } from "./deepseek";
 import { completeWithClaude, isClaudeConfigured } from "./claude";
 import { completeWithGemini, isGeminiConfigured } from "./gemini";
+import { completeWithMock, isMockConfigured } from "./mock-provider";
 
 export type { ProviderCompletionInput, ProviderCompletionResult };
 
 export type ProviderAdapter = {
-  name: AiProviderName | "claude" | "gemini";
+  name: AiProviderName;
   isConfigured: () => boolean;
   complete: (
     input: ProviderCompletionInput,
@@ -36,6 +34,11 @@ export type ProviderRuntimeConfig = {
 };
 
 export const providerAdapters: ProviderAdapter[] = [
+  {
+    name: "mock",
+    isConfigured: () => isMockConfigured(),
+    complete: (input) => completeWithMock(input),
+  },
   {
     name: "openai",
     isConfigured: () => isOpenAiConfigured(process.env.OPENAI_API_KEY),
@@ -67,21 +70,28 @@ export const providerAdapters: ProviderAdapter[] = [
   },
 ];
 
+// Resolves the best available provider given an optional preference.
+// Preference order: preferred → configured fallbacks → null.
+// "mock" is always considered configured; real providers require API keys.
 export function resolveConfiguredProvider(
   preferred: string | undefined
 ): ProviderAdapter | null {
-  const order: string[] =
-    preferred === "deepseek"
-      ? ["deepseek", "openai", "claude", "gemini"]
-      : preferred === "claude"
-        ? ["claude", "openai", "deepseek", "gemini"]
-        : preferred === "gemini"
-          ? ["gemini", "openai", "deepseek", "claude"]
-          : ["openai", "deepseek", "claude", "gemini"];
+  const order: AiProviderName[] =
+    preferred === "mock"
+      ? ["mock"]
+      : preferred === "deepseek"
+        ? ["deepseek", "openai", "claude", "gemini"]
+        : preferred === "claude"
+          ? ["claude", "openai", "deepseek", "gemini"]
+          : preferred === "gemini"
+            ? ["gemini", "openai", "deepseek", "claude"]
+            : preferred === "openai"
+              ? ["openai", "deepseek", "claude", "gemini"]
+              : ["openai", "deepseek", "claude", "gemini"];
 
   for (const name of order) {
     const adapter = providerAdapters.find((a) => a.name === name);
     if (adapter?.isConfigured()) return adapter;
   }
-  return providerAdapters.find((a) => a.isConfigured()) ?? null;
+  return providerAdapters.find((a) => a.name !== "mock" && a.isConfigured()) ?? null;
 }
