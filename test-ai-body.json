@@ -1,0 +1,14 @@
+﻿{
+  "conversationId": "test-deepseek-01",
+  "message": "Merhaba, iki kişilik oda için 15-17 Temmuz arası müsaitlik ve fiyat alabilir miyim?",
+  "mode": "demo",
+  "guest": {
+    "name": "Ahmet Yılmaz",
+    "language": "tr"
+  },
+  "hotelPolicy": {
+    "hotelName": "Grand Hotel Demo",
+    "checkInTime": "14:00",
+    "checkOutTime": "12:00"
+  }
+}
