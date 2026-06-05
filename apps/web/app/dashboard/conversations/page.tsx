@@ -526,6 +526,8 @@ export default function ConversationsPage() {
   const [confirmedReservations, setConfirmedReservations] = useState<Record<string, boolean>>({});
 
   const [sentLink, setSentLink] = useState(false);
+  // AI-3 controlled test trigger: in-flight flag for the real /api/ai/respond call.
+  const [aiTestLoading, setAiTestLoading] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [toast, setToast] = useState<ToastData | null>(null);
   const [operationFeed, setOperationFeed] = useState<OperationFeedItem[]>([]);
@@ -1762,6 +1764,120 @@ export default function ConversationsPage() {
     setReplyText("");
   }
 
+  // ── AI-3 controlled real-AI test trigger ───────────────────────────────────
+  // Isolated developer/test path: UI → POST /api/ai/respond → real provider
+  // (DeepSeek) → AI reply appended to the active thread. Does not touch the
+  // reservation/payment lifecycle, the demo simulation, or any other flow.
+  async function handleAiTestReply() {
+    if (aiTestLoading) return;
+    const conv = selectedConv;
+    if (!conv) return;
+
+    const msgs = messagesForConv(selected);
+    const lastGuest = [...msgs].reverse().find((m) => m.dir === "in");
+    const guestMessage = lastGuest?.body?.trim();
+    if (!guestMessage) {
+      showToast("AI Test", "Misafir mesajı bulunamadı", "new");
+      return;
+    }
+
+    const res = effectiveReservation;
+    const reservationContext = res
+      ? {
+          roomType: res.room,
+          checkIn: res.checkIn,
+          checkOut: res.checkOut,
+          guests: res.guests,
+          totalAmount: res.total,
+          currency: res.currency,
+          ref: res.ref,
+          paymentStatus:
+            res.status === "confirmed"
+              ? ("completed" as const)
+              : res.status === "pending_payment"
+                ? ("pending" as const)
+                : ("not_applicable" as const),
+          stage:
+            res.status === "confirmed"
+              ? ("confirmed" as const)
+              : res.status === "pending_payment"
+                ? ("payment_pending" as const)
+                : res.status === "quoted"
+                  ? ("offer_sent" as const)
+                  : ("new_inquiry" as const),
+        }
+      : undefined;
+
+    const recentMessages = msgs
+      .filter((m) => m.dir !== "system")
+      .slice(-8)
+      .map((m) => ({
+        role:
+          m.dir === "in"
+            ? ("guest" as const)
+            : m.by === "human"
+              ? ("staff" as const)
+              : ("ai" as const),
+        content: m.body,
+      }));
+
+    setAiTestLoading(true);
+    setLocalTyping((prev) => ({ ...prev, [selected]: true }));
+
+    try {
+      const r = await fetch("/api/ai/respond", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: selected,
+          message: guestMessage,
+          mode: "live",
+          guest: { name: conv.contact.name, language: conv.language },
+          reservationContext,
+          hotelPolicy: {
+            hotelName: "Grand Hotel Demo",
+            checkInTime: "14:00",
+            checkOutTime: "12:00",
+          },
+          recentMessages,
+        }),
+      });
+
+      const json = (await r.json()) as {
+        ok?: boolean;
+        data?: { reply: string };
+        fallback?: { reply: string };
+        meta?: { provider?: string; model?: string; processingMs?: number };
+      };
+
+      if (json.meta) {
+        console.log("[AI TEST] provider", json.meta.provider);
+        console.log("[AI TEST] model", json.meta.model);
+        console.log("[AI TEST] processingMs", json.meta.processingMs);
+      }
+
+      const response = json.ok && json.data ? json.data : json.fallback;
+      if (!response?.reply) {
+        showToast("AI Test", "AI yanıtı alınamadı", "new");
+        return;
+      }
+
+      const now = new Date().toLocaleTimeString("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      addMessages(selected, [
+        { id: `ai-test-${Date.now()}`, dir: "out", by: "ai", body: response.reply, time: now },
+      ]);
+      setLocalLastMsgs((prev) => ({ ...prev, [selected]: response.reply }));
+    } catch {
+      showToast("AI Test", "AI yanıtı alınamadı", "new");
+    } finally {
+      setLocalTyping((prev) => ({ ...prev, [selected]: false }));
+      setAiTestLoading(false);
+    }
+  }
+
   // ── Filter ─────────────────────────────────────────────────────────────────
 
   const filtered = opPanel.filteredByChannel(
@@ -1966,6 +2082,17 @@ export default function ConversationsPage() {
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              {/* AI-3 controlled real-AI test trigger (non-customer-facing). */}
+              <button
+                type="button"
+                onClick={handleAiTestReply}
+                disabled={aiTestLoading}
+                title="Aktif görüşmedeki son misafir mesajı için gerçek AI yanıtı üretir (test)"
+                className="hidden items-center gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.035] px-3 py-1.5 text-[11px] font-medium text-white/45 transition-[background-color,color,border-color] duration-200 hover:border-white/[0.1] hover:bg-white/[0.055] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-50 md:flex"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                {aiTestLoading ? "AI…" : "AI Test"}
+              </button>
               <button
                 type="button"
                 onClick={() => {
