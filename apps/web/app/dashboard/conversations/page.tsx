@@ -267,6 +267,58 @@ const INCOMING_MSG: ChatMsg = {
   time: "",
 };
 
+// AI-4D — Isolated AI Test message overlay for static conversations.
+// Static demo threads (c1 Ahmet / c2 Hans / c4 Sarah …) are not in the
+// localStorage-backed operation store. Real AI Test replies for them live in a
+// DEDICATED state + localStorage key — fully separate from `localMessages`.
+// Rationale: `localMessages` also carries deterministic demo overlays (e.g. the
+// 8s Ahmet follow-up) that rewrite the array on every mount; persisting through
+// it was fragile (c1 specifically lost messages). This overlay is only ever
+// mutated by AI Test, so its writes are never affected by demo overlay writes.
+const AI_TEST_STATIC_STORAGE_KEY = "tugobo-ai-test-static-messages-v1";
+
+// Union two overlay maps by message id (per conversation), preserving order
+// (base first, then any new ids from incoming). Used for non-destructive
+// hydration/persistence so a transient empty snapshot can never erase saved data
+// and duplicates can never accumulate.
+function mergeAiTestOverlay(
+  base: Record<string, ChatMsg[]>,
+  incoming: Record<string, ChatMsg[]>
+): Record<string, ChatMsg[]> {
+  const out: Record<string, ChatMsg[]> = {};
+  const convIds = new Set([...Object.keys(base), ...Object.keys(incoming)]);
+  for (const convId of convIds) {
+    const seen = new Set<string>();
+    const merged: ChatMsg[] = [];
+    for (const m of [...(base[convId] ?? []), ...(incoming[convId] ?? [])]) {
+      if (!m || typeof m.id !== "string" || seen.has(m.id)) continue;
+      seen.add(m.id);
+      merged.push(m);
+    }
+    if (merged.length) out[convId] = merged;
+  }
+  return out;
+}
+
+function readAiTestOverlay(): Record<string, ChatMsg[]> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(AI_TEST_STATIC_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, ChatMsg[]>;
+    if (!parsed || typeof parsed !== "object") return {};
+    const out: Record<string, ChatMsg[]> = {};
+    for (const [convId, msgs] of Object.entries(parsed)) {
+      if (Array.isArray(msgs)) {
+        out[convId] = msgs.filter((m) => m && typeof m.id === "string");
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 // ─── Demo guest pool ──────────────────────────────────────────────────────────
 
 type DemoGuest = {
@@ -508,6 +560,11 @@ export default function ConversationsPage() {
   // Per-conversation interactive state
   const [localStatuses, setLocalStatuses] = useState<Record<string, ConversationStatus>>({});
   const [localMessages, setLocalMessages] = useState<Record<string, ChatMsg[]>>({});
+  // AI-4D — Isolated AI Test overlay for static conversations (persisted separately
+  // from localMessages so deterministic demo writes can never affect it).
+  const [aiTestMessagesByConversation, setAiTestMessagesByConversation] = useState<
+    Record<string, ChatMsg[]>
+  >({});
   const [localTyping, setLocalTyping] = useState<Record<string, boolean>>({});
   const [localLeadStatuses, setLocalLeadStatuses] = useState<Record<string, LeadStatus>>({});
   const [localLifecycleEvents, setLocalLifecycleEvents] = useState<
@@ -659,10 +716,22 @@ export default function ConversationsPage() {
         : undefined,
     [selectedConv, effectiveStatus, effectiveLeadStatus]
   );
-  const allMessages: ChatMsg[] = useMemo(
-    () => [...(thread?.messages ?? []), ...(localMessages[selected] ?? [])],
-    [thread, localMessages, selected]
-  );
+  const allMessages: ChatMsg[] = useMemo(() => {
+    // Render order: seed CHAT_THREADS → localMessages overlay → AI Test overlay.
+    const combined = [
+      ...(thread?.messages ?? []),
+      ...(localMessages[selected] ?? []),
+      ...(aiTestMessagesByConversation[selected] ?? []),
+    ];
+    const seen = new Set<string>();
+    const deduped: ChatMsg[] = [];
+    for (const m of combined) {
+      if (!m || seen.has(m.id)) continue;
+      seen.add(m.id);
+      deduped.push(m);
+    }
+    return deduped;
+  }, [thread, localMessages, aiTestMessagesByConversation, selected]);
   const isAiTyping = hasLocalStatus
     ? (localTyping[selected] ?? false)
     : (thread?.aiTyping ?? false);
@@ -880,6 +949,15 @@ export default function ConversationsPage() {
       ...prev,
       [convId]: [...(prev[convId] ?? []), ...msgs],
     }));
+  }
+
+  // AI-4D — Append a real AI Test reply into the isolated, persisted overlay.
+  function addAiTestMessage(convId: string, msg: ChatMsg) {
+    setAiTestMessagesByConversation((prev) => {
+      const existing = prev[convId] ?? [];
+      if (existing.some((m) => m.id === msg.id)) return prev;
+      return { ...prev, [convId]: [...existing, msg] };
+    });
   }
 
   function messagesForConv(convId: string): ChatMsg[] {
@@ -1232,7 +1310,7 @@ export default function ConversationsPage() {
     setTimeout(() => {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
     }, 50);
-  }, [localMessages, localTyping]);
+  }, [localMessages, aiTestMessagesByConversation, localTyping]);
 
   useEffect(() => {
     const unsub = useOperationConversationStore.subscribe((state, prev) => {
@@ -1251,6 +1329,34 @@ export default function ConversationsPage() {
     return unsub;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // AI-4D — Hydrate the isolated AI Test overlay on mount (static conversations).
+  // This overlay is independent of `localMessages`, so deterministic demo writes
+  // (e.g. the 8s Ahmet follow-up) can never interfere with it.
+  const aiTestHydratedRef = useRef(false);
+  useEffect(() => {
+    const stored = readAiTestOverlay();
+    if (Object.keys(stored).length) {
+      setAiTestMessagesByConversation((prev) => mergeAiTestOverlay(prev, stored));
+    }
+    aiTestHydratedRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // AI-4D — Persist the isolated AI Test overlay whenever it changes. The write is
+  // NON-DESTRUCTIVE: it unions the current overlay into whatever is already stored
+  // (by message id), so a transient empty snapshot can never erase saved messages
+  // and duplicates can never accumulate. Gated on hydration to avoid redundant writes.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!aiTestHydratedRef.current) return;
+    try {
+      const merged = mergeAiTestOverlay(readAiTestOverlay(), aiTestMessagesByConversation);
+      window.localStorage.setItem(AI_TEST_STATIC_STORAGE_KEY, JSON.stringify(merged));
+    } catch {
+      // Ignore quota/serialization errors — non-critical for the overlay.
+    }
+  }, [aiTestMessagesByConversation]);
 
   // Simulate an incoming follow-up from Ahmet (c1) after 8 seconds
   useEffect(() => {
@@ -1862,13 +1968,25 @@ export default function ConversationsPage() {
         return;
       }
 
-      const now = new Date().toLocaleTimeString("en-GB", {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      addMessages(selected, [
-        { id: `ai-test-${Date.now()}`, dir: "out", by: "ai", body: response.reply, time: now },
-      ]);
+      // Runtime/operation conversations persist via the operation store (unchanged).
+      // Static demo threads use the DEDICATED, isolated AI Test overlay — separate
+      // from `localMessages` so deterministic demo writes can never affect it.
+      const operation = opPanel.getOperationSummary(selected);
+      if (operation) {
+        useOperationConversationStore.getState().appendAiMessage(selected, response.reply);
+      } else {
+        const now = new Date().toLocaleTimeString("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        addAiTestMessage(selected, {
+          id: `ai-test-${Date.now()}`,
+          dir: "out",
+          by: "ai",
+          body: response.reply,
+          time: now,
+        });
+      }
       setLocalLastMsgs((prev) => ({ ...prev, [selected]: response.reply }));
     } catch {
       showToast("AI Test", "AI yanıtı alınamadı", "new");

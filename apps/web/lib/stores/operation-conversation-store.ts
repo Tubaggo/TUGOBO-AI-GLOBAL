@@ -41,6 +41,7 @@ type OperationConversationState = {
     externalMessageId?: string
   ) => void;
   addAIResponse: (conversationId: string, guestMessage: string) => void;
+  appendAiMessage: (conversationId: string, content: string) => OperationMessage | null;
   selectConversation: (id: string | null) => void;
   updateConversationStage: (id: string, stage: ConversationStage) => void;
   setChannelFilter: (filter: ChannelFilter) => void;
@@ -301,6 +302,33 @@ export const useOperationConversationStore = create<OperationConversationState>(
 
   addAIResponse: (conversationId, guestMessage) => {
     get().simulateAIResponseForConversation(conversationId, guestMessage);
+  },
+
+  // Appends a real, pre-generated AI reply (e.g. from /api/ai/respond → DeepSeek)
+  // into the persisted conversation. Reuses the same persistence path as guest /
+  // operator / simulated-AI messages, so it survives refresh via the store's
+  // localStorage persist middleware. No new storage mechanism.
+  appendAiMessage: (conversationId, content) => {
+    const conv = get().getConversation(conversationId);
+    if (!conv) return null;
+
+    const message: OperationMessage = {
+      id: `ai-${conversationId}-${Date.now()}`,
+      conversationId,
+      sender: "ai",
+      content,
+      timestamp: nowIso(),
+      channel: conv.channel,
+      meta: { aiGenerated: true },
+    };
+
+    set((s) => ({
+      conversations: s.conversations.map((c) =>
+        c.id === conversationId ? appendMessage(c, message) : c
+      ),
+    }));
+
+    return message;
   },
 
   simulateAIResponseForConversation: (conversationId, guestMessage) => {
