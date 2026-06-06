@@ -1883,7 +1883,7 @@ export default function ConversationsPage() {
     const lastGuest = [...msgs].reverse().find((m) => m.dir === "in");
     const guestMessage = lastGuest?.body?.trim();
     if (!guestMessage) {
-      showToast("AI Test", "Misafir mesajı bulunamadı", "new");
+      showToast("AI Yanıt", "Misafir mesajı bulunamadı", "new");
       return;
     }
 
@@ -1964,7 +1964,7 @@ export default function ConversationsPage() {
 
       const response = json.ok && json.data ? json.data : json.fallback;
       if (!response?.reply) {
-        showToast("AI Test", "AI yanıtı alınamadı", "new");
+        showToast("AI Yanıt", "AI yanıtı alınamadı", "new");
         return;
       }
 
@@ -2002,7 +2002,7 @@ export default function ConversationsPage() {
       }
       setLocalLastMsgs((prev) => ({ ...prev, [selected]: response.reply }));
     } catch {
-      showToast("AI Test", "AI yanıtı alınamadı", "new");
+      showToast("AI Yanıt", "AI yanıtı alınamadı", "new");
     } finally {
       setLocalTyping((prev) => ({ ...prev, [selected]: false }));
       setAiTestLoading(false);
@@ -2218,11 +2218,11 @@ export default function ConversationsPage() {
                 type="button"
                 onClick={handleAiTestReply}
                 disabled={aiTestLoading}
-                title="Aktif görüşmedeki son misafir mesajı için gerçek AI yanıtı üretir (test)"
+                title="Aktif görüşmedeki son misafir mesajı için AI yanıtı hazırlar — siz onaylar veya devralırsınız"
                 className="hidden items-center gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.035] px-3 py-1.5 text-[11px] font-medium text-white/45 transition-[background-color,color,border-color] duration-200 hover:border-white/[0.1] hover:bg-white/[0.055] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-50 md:flex"
               >
                 <Sparkles className="h-3.5 w-3.5" />
-                {aiTestLoading ? "AI…" : "AI Test"}
+                {aiTestLoading ? "AI yanıt hazırlıyor…" : "AI Yanıt Öner"}
               </button>
               <button
                 type="button"
