@@ -1951,7 +1951,7 @@ export default function ConversationsPage() {
 
       const json = (await r.json()) as {
         ok?: boolean;
-        data?: { reply: string };
+        data?: { reply: string; confidence?: number };
         fallback?: { reply: string };
         meta?: { provider?: string; model?: string; processingMs?: number };
       };
@@ -1967,6 +1967,18 @@ export default function ConversationsPage() {
         showToast("AI Test", "AI yanıtı alınamadı", "new");
         return;
       }
+
+      const aiMeta: {
+        provider?: string;
+        model?: string;
+        processingMs?: number;
+        confidence?: number;
+      } = {};
+      if (json.meta?.provider) aiMeta.provider = json.meta.provider;
+      if (json.meta?.model) aiMeta.model = json.meta.model;
+      if (json.meta?.processingMs != null) aiMeta.processingMs = json.meta.processingMs;
+      if (json.ok && json.data?.confidence != null) aiMeta.confidence = json.data.confidence;
+      const hasAiMeta = Object.keys(aiMeta).length > 0;
 
       // Runtime/operation conversations persist via the operation store (unchanged).
       // Static demo threads use the DEDICATED, isolated AI Test overlay — separate
@@ -1985,6 +1997,7 @@ export default function ConversationsPage() {
           by: "ai",
           body: response.reply,
           time: now,
+          ...(hasAiMeta && { aiMeta }),
         });
       }
       setLocalLastMsgs((prev) => ({ ...prev, [selected]: response.reply }));

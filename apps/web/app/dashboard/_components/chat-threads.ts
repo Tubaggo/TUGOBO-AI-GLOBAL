@@ -1,12 +1,20 @@
 export type MsgDir = "in" | "out" | "system";
 export type MsgBy = "ai" | "human";
 
+export interface AiMsgMeta {
+  provider?: string;
+  model?: string;
+  processingMs?: number;
+  confidence?: number;
+}
+
 export interface ChatMsg {
   id: string;
   dir: MsgDir;
   body: string;
   time: string;
   by?: MsgBy;
+  aiMeta?: AiMsgMeta;
 }
 
 export interface ConvReservation {

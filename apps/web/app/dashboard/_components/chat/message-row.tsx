@@ -1,11 +1,30 @@
 "use client";
 
 import { Bot, Sparkles, User } from "lucide-react";
-import type { ChatMsg } from "../chat-threads";
+import type { AiMsgMeta, ChatMsg } from "../chat-threads";
 import type { Conversation } from "../mock-data";
 import { cn } from "@/lib/utils";
 import { isAnimatedChatMessageId } from "./animated-chat-message-id";
 import { getSystemEventMeta, systemEventKindClasses } from "./system-event-meta";
+
+function formatProvider(p: string): string {
+  if (p === "deepseek") return "DeepSeek";
+  if (p === "openai") return "OpenAI";
+  if (p === "claude") return "Claude";
+  if (p === "gemini") return "Gemini";
+  if (p === "mock") return "Mock";
+  return p.charAt(0).toUpperCase() + p.slice(1);
+}
+
+function buildAiMetaLabel(meta: AiMsgMeta | undefined): string | null {
+  if (!meta) return null;
+  const parts: string[] = [];
+  if (meta.provider) parts.push(formatProvider(meta.provider));
+  if (meta.model) parts.push(meta.model);
+  if (meta.processingMs != null) parts.push((meta.processingMs / 1000).toFixed(1) + "s");
+  if (meta.confidence != null) parts.push("conf " + meta.confidence.toFixed(2));
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
 
 function rowKey(msg: ChatMsg): "guest" | "ai" | "human" | "system" {
   if (msg.dir === "system") return "system";
@@ -94,6 +113,7 @@ function GuestMessageBubble({
 }
 
 function AiMessageBubble({ msg, className }: { msg: ChatMsg; className?: string }) {
+  const metaLabel = buildAiMetaLabel(msg.aiMeta);
   return (
     <div className={cn("flex w-full items-end justify-end gap-2.5", className)}>
       <div className="flex min-w-0 max-w-[min(100%,26rem)] justify-end">
@@ -106,7 +126,7 @@ function AiMessageBubble({ msg, className }: { msg: ChatMsg; className?: string 
         >
           <div className="mb-2 flex items-center gap-1.5 text-[10px] font-medium text-blue-100/52">
             <Sparkles className="h-3 w-3 shrink-0 text-blue-200/70" aria-hidden />
-            <span className="tracking-wide">Tugobo · ops</span>
+            <span className="tracking-wide">{metaLabel ?? "Tugobo · ops"}</span>
           </div>
           <p className="whitespace-pre-line text-[13px] font-normal leading-[1.62] text-white/[0.96]">{msg.body}</p>
           <div className="mt-3 flex justify-end">
