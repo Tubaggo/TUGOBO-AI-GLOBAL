@@ -34,6 +34,13 @@ const defaultHours: Record<number, { open: boolean; from: string; to: string }> 
 
 type ChannelConnectionStatus = "active" | "pending" | "degraded" | "disabled" | "error";
 type ChannelConnectionHealth = "healthy" | "pending" | "error" | "disabled";
+type ChannelReadiness = "not_configured" | "partially_configured" | "connected";
+type ChannelOutboundConfig = {
+  url: string | null;
+  urlConfigured: boolean;
+  tokenConfigured: boolean;
+  tokenMasked: string | null;
+};
 type ChannelHealth = {
   channelType: "web_chat" | "instagram" | "whatsapp";
   status: ChannelConnectionStatus;
@@ -50,17 +57,20 @@ type ChannelSetupDetails = {
   workspaceId: string;
   hotelId: string;
   status: ChannelConnectionStatus;
+  readiness: ChannelReadiness;
   connectionHealth: ChannelConnectionHealth;
   secret: {
     available: boolean;
     masked: string | null;
     copyAllowed: boolean;
   };
+  outbound: ChannelOutboundConfig;
 };
 type ChannelConnection = {
   channelType: "web_chat" | "instagram" | "whatsapp";
   displayName: "Web Chat" | "Instagram" | "WhatsApp";
   status: ChannelConnectionStatus;
+  readiness: ChannelReadiness;
   lastConnectedAt: string | null;
   lastError: string | null;
   webhookState: "ready" | "not_configured";
@@ -80,11 +90,19 @@ type RotatedSecret = {
   copyAllowed: boolean;
 };
 
+const emptyOutbound: ChannelOutboundConfig = {
+  url: null,
+  urlConfigured: false,
+  tokenConfigured: false,
+  tokenMasked: null,
+};
+
 const fallbackChannels: ChannelConnection[] = [
   {
     channelType: "web_chat",
     displayName: "Web Chat",
     status: "pending",
+    readiness: "connected",
     lastConnectedAt: null,
     lastError: null,
     webhookState: "ready",
@@ -94,14 +112,17 @@ const fallbackChannels: ChannelConnection[] = [
       workspaceId: "demo-hotel",
       hotelId: "demo-hotel",
       status: "pending",
+      readiness: "connected",
       connectionHealth: "pending",
       secret: { available: false, masked: null, copyAllowed: false },
+      outbound: emptyOutbound,
     },
   },
   {
     channelType: "instagram",
     displayName: "Instagram",
     status: "pending",
+    readiness: "not_configured",
     lastConnectedAt: null,
     lastError: null,
     webhookState: "not_configured",
@@ -111,14 +132,17 @@ const fallbackChannels: ChannelConnection[] = [
       workspaceId: "demo-hotel",
       hotelId: "demo-hotel",
       status: "pending",
+      readiness: "not_configured",
       connectionHealth: "pending",
       secret: { available: false, masked: null, copyAllowed: false },
+      outbound: emptyOutbound,
     },
   },
   {
     channelType: "whatsapp",
     displayName: "WhatsApp",
     status: "pending",
+    readiness: "not_configured",
     lastConnectedAt: null,
     lastError: null,
     webhookState: "not_configured",
@@ -128,8 +152,10 @@ const fallbackChannels: ChannelConnection[] = [
       workspaceId: "demo-hotel",
       hotelId: "demo-hotel",
       status: "pending",
+      readiness: "not_configured",
       connectionHealth: "pending",
       secret: { available: false, masked: null, copyAllowed: false },
+      outbound: emptyOutbound,
     },
   },
 ];
@@ -161,6 +187,19 @@ export default function SettingsPage() {
   const [rotatedSecrets, setRotatedSecrets] = useState<
     Partial<Record<Extract<ChannelConnection["channelType"], "instagram" | "whatsapp">, RotatedSecret>>
   >({});
+  const [outboundDrafts, setOutboundDrafts] = useState<
+    Partial<Record<Extract<ChannelConnection["channelType"], "instagram" | "whatsapp">, { url: string; token: string }>>
+  >({});
+  const [savingChannel, setSavingChannel] = useState<
+    Extract<ChannelConnection["channelType"], "instagram" | "whatsapp"> | null
+  >(null);
+  const [outboundSavedChannel, setOutboundSavedChannel] = useState<
+    Extract<ChannelConnection["channelType"], "instagram" | "whatsapp"> | null
+  >(null);
+  const [simulatingInstagram, setSimulatingInstagram] = useState(false);
+  const [simResult, setSimResult] = useState<{ status: "success" | "error"; message: string } | null>(null);
+  // Dev/demo-only inbound simulator (never shown in the sales preview or production build).
+  const showInstagramSimulator = !isSalesPreview && process.env.NODE_ENV !== "production";
   const [persona, setPersona] = useState(
     "Tugobo AI otel operasyonunu net, kontrollü ve misafir diline uygun yanıtlarla destekler. Rezervasyon ve ödeme adımlarını görünür tutar; gerekli olduğunda operatöre devreder."
   );
@@ -323,6 +362,90 @@ export default function SettingsPage() {
       // Rotation errors are surfaced by leaving the previous setup state in place.
     } finally {
       setRotatingChannel(null);
+    }
+  }
+
+  function handleOutboundDraftChange(
+    channelType: Extract<ChannelConnection["channelType"], "instagram" | "whatsapp">,
+    patch: Partial<{ url: string; token: string }>,
+    fallbackUrl: string
+  ) {
+    setOutboundDrafts((current) => {
+      const existing = current[channelType] ?? { url: fallbackUrl, token: "" };
+      return { ...current, [channelType]: { ...existing, ...patch } };
+    });
+  }
+
+  async function handleSimulateInstagram() {
+    if (isSalesPreview || simulatingInstagram) return;
+
+    setSimulatingInstagram(true);
+    setSimResult(null);
+
+    try {
+      const res = await fetch("/api/integrations/manychat/simulate-inbound", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        simulated?: { guestName: string; message: string };
+      } | null;
+
+      if (data?.ok && data.simulated) {
+        setSimResult({
+          status: "success",
+          message: `Instagram DM alındı — ${data.simulated.guestName}. Görüşmeler sayfasında listelenir.`,
+        });
+        await refreshChannels();
+      } else {
+        setSimResult({ status: "error", message: "Instagram mesajı simüle edilemedi." });
+      }
+    } catch {
+      setSimResult({ status: "error", message: "Instagram mesajı simüle edilemedi." });
+    } finally {
+      setSimulatingInstagram(false);
+      setTimeout(() => setSimResult(null), 6000);
+    }
+  }
+
+  async function handleConfigureOutbound(
+    channelType: Extract<ChannelConnection["channelType"], "instagram" | "whatsapp">,
+    fallbackUrl: string
+  ) {
+    if (isSalesPreview) return;
+
+    const draft = outboundDrafts[channelType] ?? { url: fallbackUrl, token: "" };
+    setSavingChannel(channelType);
+
+    try {
+      const res = await fetch("/api/settings/channels/configure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channelType,
+          outboundUrl: draft.url,
+          // Only send the token when the operator typed a new value, so a blank
+          // field never clears an already-stored token.
+          ...(draft.token.trim() ? { outboundToken: draft.token.trim() } : {}),
+        }),
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean } | null;
+
+      if (data?.ok) {
+        setOutboundDrafts((current) => ({
+          ...current,
+          [channelType]: { url: draft.url, token: "" },
+        }));
+        setOutboundSavedChannel(channelType);
+        setTimeout(() => setOutboundSavedChannel(null), 2500);
+        await refreshChannels();
+      }
+    } catch {
+      // Leave the previous state visible on failure.
+    } finally {
+      setSavingChannel(null);
     }
   }
 
@@ -508,6 +631,9 @@ export default function SettingsPage() {
                     rotatedSecret={rotatableChannel ? rotatedSecrets[rotatableChannel] : undefined}
                     testing={testingChannel === channel.channelType}
                     rotating={rotatingChannel === channel.channelType}
+                    outboundDraft={rotatableChannel ? outboundDrafts[rotatableChannel] : undefined}
+                    savingOutbound={rotatableChannel ? savingChannel === rotatableChannel : false}
+                    outboundSaved={rotatableChannel ? outboundSavedChannel === rotatableChannel : false}
                     onToggleSetup={() =>
                       setExpandedChannel((current) =>
                         current === channel.channelType ? null : channel.channelType
@@ -517,6 +643,26 @@ export default function SettingsPage() {
                     onTest={() => handleTestChannel(channel.channelType)}
                     onRotateSecret={
                       rotatableChannel ? () => handleRotateSecret(rotatableChannel) : undefined
+                    }
+                    onOutboundDraftChange={
+                      rotatableChannel
+                        ? (patch, fallbackUrl) =>
+                            handleOutboundDraftChange(rotatableChannel, patch, fallbackUrl)
+                        : undefined
+                    }
+                    onConfigureOutbound={
+                      rotatableChannel
+                        ? (fallbackUrl) => handleConfigureOutbound(rotatableChannel, fallbackUrl)
+                        : undefined
+                    }
+                    simulator={
+                      showInstagramSimulator && channel.channelType === "instagram"
+                        ? {
+                            simulating: simulatingInstagram,
+                            result: simResult,
+                            onSimulate: handleSimulateInstagram,
+                          }
+                        : undefined
                     }
                   />
                 );
@@ -537,10 +683,16 @@ function ChannelConnectionRow({
   rotatedSecret,
   testing,
   rotating,
+  outboundDraft,
+  savingOutbound,
+  outboundSaved,
   onToggleSetup,
   onCopy,
   onTest,
   onRotateSecret,
+  onOutboundDraftChange,
+  onConfigureOutbound,
+  simulator,
 }: {
   channel: ChannelConnection;
   expanded: boolean;
@@ -549,10 +701,20 @@ function ChannelConnectionRow({
   rotatedSecret?: RotatedSecret;
   testing: boolean;
   rotating: boolean;
+  outboundDraft?: { url: string; token: string };
+  savingOutbound: boolean;
+  outboundSaved: boolean;
   onToggleSetup: () => void;
   onCopy: (value: string | null | undefined, key: string) => void;
   onTest: () => void;
   onRotateSecret?: () => void;
+  onOutboundDraftChange?: (patch: Partial<{ url: string; token: string }>, fallbackUrl: string) => void;
+  onConfigureOutbound?: (fallbackUrl: string) => void;
+  simulator?: {
+    simulating: boolean;
+    result: { status: "success" | "error"; message: string } | null;
+    onSimulate: () => void;
+  };
 }) {
   const Icon =
     channel.channelType === "web_chat"
@@ -562,10 +724,12 @@ function ChannelConnectionRow({
         : MessageSquare;
   const health = channel.health;
   const status = statusView(health?.status ?? channel.status);
+  const isWebhookChannel = channel.channelType === "instagram" || channel.channelType === "whatsapp";
+  const readiness = readinessView(channel.readiness);
 
   return (
     <div className="py-4 first:pt-0 last:pb-0">
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+      <div className="flex flex-col gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.05]">
             <Icon className="h-4.5 w-4.5 text-white/55" />
@@ -623,9 +787,35 @@ function ChannelConnectionRow({
                 {testResult.message}
               </p>
             ) : null}
+            {simulator?.result ? (
+              <p
+                className={cn(
+                  "mt-1 text-xs",
+                  simulator.result.status === "success" ? "text-emerald-300/80" : "text-red-300/80"
+                )}
+              >
+                {simulator.result.message}
+              </p>
+            ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+        <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.04] pt-3">
+          {simulator ? (
+            <button
+              type="button"
+              onClick={simulator.onSimulate}
+              className={actionButtonCls}
+              disabled={simulator.simulating}
+              title="Geliştirme/demo: gerçek ingest hattı üzerinden örnek bir Instagram DM oluşturur"
+            >
+              {simulator.simulating ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Instagram className="h-3.5 w-3.5" />
+              )}
+              Instagram DM simüle et
+            </button>
+          ) : null}
           <button type="button" onClick={onTest} className={actionButtonCls} disabled={testing}>
             {testing ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
             Bağlantıyı test et
@@ -634,6 +824,18 @@ function ChannelConnectionRow({
             <KeyRound className="h-3.5 w-3.5" />
             Kurulum bilgileri
           </button>
+          {isWebhookChannel ? (
+            <div
+              className={cn(
+                "inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium",
+                readiness.className
+              )}
+              title="Kanalın operasyonel yapılandırma durumu"
+            >
+              <readiness.icon className="h-3 w-3" />
+              {readiness.label}
+            </div>
+          ) : null}
           <div
             className={cn(
               "inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium",
@@ -651,8 +853,13 @@ function ChannelConnectionRow({
           copiedKey={copiedKey}
           rotatedSecret={rotatedSecret}
           rotating={rotating}
+          outboundDraft={outboundDraft}
+          savingOutbound={savingOutbound}
+          outboundSaved={outboundSaved}
           onCopy={onCopy}
           onRotateSecret={onRotateSecret}
+          onOutboundDraftChange={onOutboundDraftChange}
+          onConfigureOutbound={onConfigureOutbound}
         />
       ) : null}
     </div>
@@ -664,21 +871,34 @@ function ChannelSetupPanel({
   copiedKey,
   rotatedSecret,
   rotating,
+  outboundDraft,
+  savingOutbound,
+  outboundSaved,
   onCopy,
   onRotateSecret,
+  onOutboundDraftChange,
+  onConfigureOutbound,
 }: {
   channel: ChannelConnection;
   copiedKey: string | null;
   rotatedSecret?: RotatedSecret;
   rotating: boolean;
+  outboundDraft?: { url: string; token: string };
+  savingOutbound: boolean;
+  outboundSaved: boolean;
   onCopy: (value: string | null | undefined, key: string) => void;
   onRotateSecret?: () => void;
+  onOutboundDraftChange?: (patch: Partial<{ url: string; token: string }>, fallbackUrl: string) => void;
+  onConfigureOutbound?: (fallbackUrl: string) => void;
 }) {
   const setup = channel.setup;
   const isWebhookChannel = channel.channelType === "instagram" || channel.channelType === "whatsapp";
   const secretCopyKey = `${channel.channelType}:secret`;
   const webhookCopyKey = `${channel.channelType}:webhook`;
   const hotelCopyKey = `${channel.channelType}:hotel`;
+  const fallbackUrl = setup.outbound.url ?? "";
+  const urlValue = outboundDraft?.url ?? fallbackUrl;
+  const tokenValue = outboundDraft?.token ?? "";
 
   return (
     <div className="mt-4 rounded-lg border border-white/[0.06] bg-white/[0.03] p-4">
@@ -744,6 +964,76 @@ function ChannelSetupPanel({
               <button type="button" onClick={onRotateSecret} className={actionButtonCls} disabled={rotating}>
                 {rotating ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                 Gizli anahtarı yenile
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {isWebhookChannel ? (
+        <div className="mt-4 rounded-lg border border-white/[0.06] bg-black/15 p-3">
+          <div className="flex items-center gap-2">
+            <Send className="h-3.5 w-3.5 text-white/45" />
+            <p className="text-xs font-medium text-white/55">Giden bağlantı (ManyChat)</p>
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-white/35">
+            Operatör yanıtlarının misafire iletilebilmesi için giden uç adresi ve erişim token&apos;ı
+            gereklidir. Token kaydedildikten sonra yeniden gösterilmez.
+          </p>
+
+          <div className="mt-3 space-y-3">
+            <div>
+              <label className="mb-1.5 block text-[11px] font-medium text-white/45">Giden URL</label>
+              <input
+                value={urlValue}
+                onChange={(e) => onOutboundDraftChange?.({ url: e.target.value }, fallbackUrl)}
+                placeholder="https://api.manychat.com/..."
+                spellCheck={false}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[11px] font-medium text-white/45">Giden token</label>
+              <input
+                value={tokenValue}
+                onChange={(e) => onOutboundDraftChange?.({ token: e.target.value }, fallbackUrl)}
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={
+                  setup.outbound.tokenConfigured
+                    ? `Kayıtlı (${setup.outbound.tokenMasked ?? "••••"}) — değiştirmek için yazın`
+                    : "Token girin"
+                }
+                className={inputCls}
+              />
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-white/34">
+              <span className="rounded-full bg-white/[0.04] px-2 py-0.5">
+                URL {setup.outbound.urlConfigured ? "tanımlı" : "eksik"}
+              </span>
+              <span className="rounded-full bg-white/[0.04] px-2 py-0.5">
+                Token {setup.outbound.tokenConfigured ? "tanımlı" : "eksik"}
+              </span>
+            </div>
+            {onConfigureOutbound ? (
+              <button
+                type="button"
+                onClick={() => onConfigureOutbound(fallbackUrl)}
+                className={actionButtonCls}
+                disabled={savingOutbound}
+              >
+                {savingOutbound ? (
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                ) : outboundSaved ? (
+                  <Check className="h-3.5 w-3.5 text-emerald-300" />
+                ) : (
+                  <Check className="h-3.5 w-3.5" />
+                )}
+                {outboundSaved ? "Kaydedildi" : "Giden bağlantıyı kaydet"}
               </button>
             ) : null}
           </div>
@@ -825,6 +1115,30 @@ function statusView(status: ChannelConnectionStatus) {
     label: "Beklemede",
     icon: Clock3,
     className: "border-amber-500/25 bg-amber-500/10 text-amber-300",
+  };
+}
+
+function readinessView(readiness: ChannelReadiness) {
+  if (readiness === "connected") {
+    return {
+      label: "Bağlantı hazır",
+      icon: Wifi,
+      className: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300",
+    };
+  }
+
+  if (readiness === "partially_configured") {
+    return {
+      label: "Kısmen yapılandırıldı",
+      icon: Clock3,
+      className: "border-amber-500/25 bg-amber-500/10 text-amber-300",
+    };
+  }
+
+  return {
+    label: "Yapılandırılmadı",
+    icon: AlertCircle,
+    className: "border-white/[0.10] bg-white/[0.04] text-white/40",
   };
 }
 

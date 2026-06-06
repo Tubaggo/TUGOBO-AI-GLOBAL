@@ -78,7 +78,10 @@ export function buildGuestMessage(
 ): OperationConversation["messages"][number] {
   const ts = nowIso();
   return {
-    id: `msg-${conversationId}-${Date.now()}`,
+    // Deterministic id when a stable upstream message id is provided, so a
+    // replayed inbound event (e.g. dev-event re-poll after refresh) is deduped
+    // by the store instead of appended again.
+    id: input.messageId ? `ig-msg-${input.messageId}` : `msg-${conversationId}-${Date.now()}`,
     conversationId,
     sender: "guest",
     content: input.message,

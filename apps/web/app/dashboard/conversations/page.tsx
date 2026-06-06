@@ -428,6 +428,7 @@ type OperationalOutcomeKind =
   | "cancelled"
   | "quote"
   | "human_takeover"
+  | "open_inquiry"
   | "closed_without_reservation";
 
 type OperationalOutcomeTone = {
@@ -4116,6 +4117,16 @@ const OUTCOME_TONES: Record<OperationalOutcomeKind, OperationalOutcomeTone> = {
     amount: "text-white/82",
     separator: "border-violet-500/12",
   },
+  open_inquiry: {
+    border: "border-sky-500/20",
+    bg: "bg-sky-500/[0.04]",
+    iconBg: "bg-sky-500/12",
+    icon: "text-sky-300",
+    badge: "border-sky-500/22 bg-sky-500/12 text-sky-200",
+    dot: "bg-sky-300 animate-pulse",
+    amount: "text-white/78",
+    separator: "border-sky-500/12",
+  },
   closed_without_reservation: {
     border: "border-white/[0.07]",
     bg: "bg-white/[0.025]",
@@ -4192,7 +4203,11 @@ function deriveOperationalOutcome(input: {
           ? "payment_pending"
           : isQuote
             ? "quote"
-            : "closed_without_reservation";
+            : // A conversation with no reservation/quote/payment is only "closed"
+              // once it is actually resolved; an active/new inbound lead is open.
+              input.effectiveStatus === "resolved"
+              ? "closed_without_reservation"
+              : "open_inquiry";
 
   const amount = resolvePaymentAmount({
     event: latestPaymentEvent,
@@ -4294,6 +4309,21 @@ function deriveOperationalOutcome(input: {
       reservationLabel: "Teklif aşamasında",
       paymentLabel: "Ödeme başlatılmadı",
       canSendPaymentLink: true,
+    };
+  }
+
+  if (kind === "open_inquiry") {
+    return {
+      ...base,
+      kind,
+      icon: Inbox,
+      title: "Yeni talep",
+      description: "Yeni misafir talebi — ilk temas, AI yanıtı bekleniyor.",
+      badge: "Yeni talep",
+      lifecycleLabel: "İlk temas",
+      reservationLabel: "Rezervasyon henüz oluşmadı",
+      paymentLabel: "Ödeme başlatılmadı",
+      canSendPaymentLink: false,
     };
   }
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
-  getConnectedChannel,
+  getChannelReadinessState,
   type ManagedChannelType,
   updateChannelHealthFromEvent,
   validateSettingsHotelId,
@@ -141,40 +141,51 @@ export async function POST(req: Request) {
     return testResult(hotelId, channelType, "success", "Web Chat aktif.");
   }
 
-  if (channelType === "whatsapp") {
-    return testResult(hotelId, channelType, "pending", "WhatsApp bağlantısı beklemede veya test yapılandırması eksik.");
+  const name = channelName(channelType);
+
+  // Readiness check: secret + outbound URL + outbound token must all be present
+  // before a ManyChat-backed channel can be considered operationally configured.
+  let readinessState: Awaited<ReturnType<typeof getChannelReadinessState>>;
+  try {
+    readinessState = await getChannelReadinessState(hotelId, channelType);
+  } catch {
+    return testResult(hotelId, channelType, "pending", `${name} bağlantısı şu anda test edilemedi.`);
   }
 
-  if (process.env.NODE_ENV !== "production" && hotelId === MANYCHAT_LOCAL_TEST_HOTEL_ID) {
+  if (!readinessState.hasSecret) {
+    return testResult(hotelId, channelType, "pending", `${name} için gizli anahtar eksik.`);
+  }
+
+  if (!readinessState.hasOutboundUrl || !readinessState.hasOutboundToken) {
+    const missing = [
+      !readinessState.hasOutboundUrl ? "giden URL" : null,
+      !readinessState.hasOutboundToken ? "giden token" : null,
+    ]
+      .filter(Boolean)
+      .join(" ve ");
+    return testResult(hotelId, channelType, "pending", `${name} için ${missing} eksik.`);
+  }
+
+  // Fully configured. In local dev, exercise the real inbound bridge for Instagram.
+  if (
+    process.env.NODE_ENV !== "production" &&
+    hotelId === MANYCHAT_LOCAL_TEST_HOTEL_ID &&
+    channelType === "instagram"
+  ) {
     try {
       const ok = await runLocalInstagramTest(req);
       return testResult(
         hotelId,
         channelType,
         ok ? "success" : "error",
-        ok ? "Instagram test mesajı yerel akışa iletildi." : "Instagram yerel test akışı başarısız oldu."
+        ok
+          ? "Instagram bağlantısı hazır; test mesajı yerel akışa iletildi."
+          : "Instagram yerel test akışı başarısız oldu."
       );
     } catch {
       return testResult(hotelId, channelType, "error", "Instagram yerel test akışı çalıştırılamadı.");
     }
   }
 
-  try {
-    const config = await getConnectedChannel(hotelId, channelType);
-    if (!config) {
-      return testResult(hotelId, channelType, "pending", "Instagram bağlantısı için kayıt bulunamadı.");
-    }
-
-    if (config.status === "error") {
-      return testResult(hotelId, channelType, "error", config.lastError ?? "Instagram bağlantısında hata var.");
-    }
-
-    if (config.inboundSecret && config.status === "active") {
-      return testResult(hotelId, channelType, "success", "Instagram bağlantısı hazır.");
-    }
-
-    return testResult(hotelId, channelType, "pending", "Instagram bağlantısı beklemede veya gizli anahtar eksik.");
-  } catch {
-    return testResult(hotelId, channelType, "pending", "Instagram bağlantısı şu anda test edilemedi.");
-  }
+  return testResult(hotelId, channelType, "success", `${name} tam olarak yapılandırıldı.`);
 }

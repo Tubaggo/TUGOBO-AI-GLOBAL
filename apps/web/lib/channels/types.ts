@@ -153,6 +153,13 @@ export type IngestChannelMessageInput = {
   message: string;
   externalId?: string;
   conversationId?: string;
+  /**
+   * Stable upstream id for this inbound message (e.g. a dev runtime event id).
+   * When present, the guest message gets a deterministic id so replaying the
+   * same event (e.g. after a page refresh re-polls dev events) does not create
+   * duplicate messages.
+   */
+  messageId?: string;
   guestPhone?: string;
   language?: string;
   unreadCount?: number;

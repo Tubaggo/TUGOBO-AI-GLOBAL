@@ -188,6 +188,8 @@ export function useLiveConversationSync(selectedId: string | null): LiveOpsState
           message: event.message,
           externalId: event.externalId,
           conversationId: existing?.id,
+          // Stable id so a replayed dev event (re-polled after refresh) is deduped.
+          messageId: event.messageId ?? event.id,
           unreadCount: existing ? (existing.unreadCount ?? 0) + 1 : 1,
           skipLocalAi: true,
         });

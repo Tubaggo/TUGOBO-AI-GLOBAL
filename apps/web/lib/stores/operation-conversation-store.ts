@@ -209,6 +209,16 @@ export const useOperationConversationStore = create<OperationConversationState>(
     const guestMsg = buildGuestMessage(conversationId, input);
     const exists = state.conversations.some((c) => c.id === conversationId);
 
+    // Idempotency guard: if this exact (stable-id) guest message is already in
+    // the conversation, the inbound event is a replay (e.g. dev events re-polled
+    // after a refresh). Do nothing — no duplicate message, unread bump, pulse, or AI.
+    if (exists) {
+      const existingConv = state.conversations.find((c) => c.id === conversationId);
+      if (existingConv?.messages.some((m) => m.id === guestMsg.id)) {
+        return conversationId!;
+      }
+    }
+
     set((s) => {
       const pulsing = { ...s.pulsingConversationIds, [conversationId!]: true as const };
 

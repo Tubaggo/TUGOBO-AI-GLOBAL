@@ -20,6 +20,8 @@ export type OperationFeedEventType =
   | "message_sent"
   | "delivery_failed"
   | "channel_pending"
+  | "channel_configuration_updated"
+  | "channel_connected"
   | "unauthorized_channel_request";
 
 export type OperationFeedSeverity = "info" | "success" | "warning" | "error";
@@ -79,6 +81,8 @@ function isEventType(input: unknown): input is OperationFeedEventType {
     input === "message_sent" ||
     input === "delivery_failed" ||
     input === "channel_pending" ||
+    input === "channel_configuration_updated" ||
+    input === "channel_connected" ||
     input === "unauthorized_channel_request"
   );
 }

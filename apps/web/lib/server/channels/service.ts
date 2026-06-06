@@ -26,6 +26,34 @@ import { resolvePilotHotelId } from "@/lib/server/pilot-hotel";
 export type ManagedChannelType = Extract<ConnectedChannelType, "web_chat" | "instagram" | "whatsapp">;
 export type ChannelHealthStatus = "active" | "pending" | "disabled" | "error";
 export type OperationalChannelHealthStatus = ChannelHealthStatus | "degraded";
+export type ChannelReadiness = "not_configured" | "partially_configured" | "connected";
+
+export type ChannelOutboundConfig = {
+  url: string | null;
+  urlConfigured: boolean;
+  tokenConfigured: boolean;
+  tokenMasked: string | null;
+};
+
+/**
+ * Operational readiness for a ManyChat-backed channel, derived from the
+ * presence of an inbound secret and outbound URL + token. This is distinct
+ * from channel *health* (live traffic): readiness reflects configuration
+ * completeness only.
+ */
+export function deriveChannelReadiness(input: {
+  hasSecret: boolean;
+  hasOutboundUrl: boolean;
+  hasOutboundToken: boolean;
+}): ChannelReadiness {
+  if (input.hasSecret && input.hasOutboundUrl && input.hasOutboundToken) {
+    return "connected";
+  }
+  if (input.hasSecret) {
+    return "partially_configured";
+  }
+  return "not_configured";
+}
 
 export type ChannelOperationalHealth = {
   channelType: ManagedChannelType;
@@ -57,6 +85,7 @@ export type ConnectedChannelDisplay = {
   channelType: ManagedChannelType;
   displayName: "Web Chat" | "Instagram" | "WhatsApp";
   status: ChannelHealthStatus;
+  readiness: ChannelReadiness;
   lastConnectedAt: string | null;
   lastError: string | null;
   webhookState: "ready" | "not_configured";
@@ -69,12 +98,14 @@ export type ChannelSetupDetails = {
   workspaceId: string;
   hotelId: string;
   status: ChannelHealthStatus;
+  readiness: ChannelReadiness;
   connectionHealth: "healthy" | "pending" | "error" | "disabled";
   secret: {
     available: boolean;
     masked: string | null;
     copyAllowed: boolean;
   };
+  outbound: ChannelOutboundConfig;
 };
 
 export type ServerConnectedChannelConfig = {
@@ -291,6 +322,122 @@ function localHealthKey(hotelId: string, channelType: ManagedChannelType): strin
   return `${hotelId}:${channelType}`;
 }
 
+// ── Local-dev outbound config store ────────────────────────────────────────
+// Mirrors the local-dev channel-health store so operators can save outbound
+// URL/token in local development (where `db` may be absent) without touching
+// env vars or source. Production persists to the connected_channels columns.
+const LOCAL_CONFIG_GLOBAL_KEY = "__tugobo_channel_outbound_config__";
+const LOCAL_CONFIG_HYDRATED_GLOBAL_KEY = "__tugobo_channel_outbound_config_hydrated__";
+
+type LocalOutboundConfig = {
+  outboundUrl?: string;
+  outboundToken?: string;
+};
+
+type LocalConfigGlobal = typeof globalThis & {
+  [LOCAL_CONFIG_GLOBAL_KEY]?: Record<string, LocalOutboundConfig>;
+  [LOCAL_CONFIG_HYDRATED_GLOBAL_KEY]?: boolean;
+};
+
+function localConfigPath(): string {
+  return path.join(process.cwd(), ".tugobo-dev", "channel-config.json");
+}
+
+function isLocalOutboundConfig(input: unknown): input is LocalOutboundConfig {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return false;
+  const candidate = input as LocalOutboundConfig;
+  return (
+    (candidate.outboundUrl === undefined || typeof candidate.outboundUrl === "string") &&
+    (candidate.outboundToken === undefined || typeof candidate.outboundToken === "string")
+  );
+}
+
+function readLocalConfig(): Record<string, LocalOutboundConfig> {
+  if (process.env.NODE_ENV === "production") return {};
+
+  try {
+    const parsed = JSON.parse(readFileSync(localConfigPath(), "utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+
+    const result: Record<string, LocalOutboundConfig> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (isLocalOutboundConfig(value)) {
+        result[key] = value;
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalConfig(store: Record<string, LocalOutboundConfig>) {
+  if (process.env.NODE_ENV === "production") return;
+
+  try {
+    const filePath = localConfigPath();
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    writeFileSync(filePath, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+  } catch {
+    // Local outbound config must never block channel operations.
+  }
+}
+
+function localConfigStore(): Record<string, LocalOutboundConfig> {
+  const scoped = globalThis as LocalConfigGlobal;
+
+  if (!scoped[LOCAL_CONFIG_GLOBAL_KEY]) {
+    scoped[LOCAL_CONFIG_GLOBAL_KEY] = {};
+  }
+
+  if (!scoped[LOCAL_CONFIG_HYDRATED_GLOBAL_KEY]) {
+    scoped[LOCAL_CONFIG_GLOBAL_KEY] = readLocalConfig();
+    scoped[LOCAL_CONFIG_HYDRATED_GLOBAL_KEY] = true;
+  }
+
+  return scoped[LOCAL_CONFIG_GLOBAL_KEY];
+}
+
+function getLocalOutboundConfig(
+  hotelId: string,
+  channelType: ManagedChannelType
+): LocalOutboundConfig {
+  return localConfigStore()[localHealthKey(hotelId, channelType)] ?? {};
+}
+
+function setLocalOutboundConfig(
+  hotelId: string,
+  channelType: ManagedChannelType,
+  patch: { outboundUrl?: string | null; outboundToken?: string | null }
+): LocalOutboundConfig {
+  const store = localConfigStore();
+  const key = localHealthKey(hotelId, channelType);
+  const current = store[key] ?? {};
+
+  const next: LocalOutboundConfig = { ...current };
+  if (patch.outboundUrl !== undefined) {
+    const value = patch.outboundUrl?.trim();
+    if (value) next.outboundUrl = value;
+    else delete next.outboundUrl;
+  }
+  if (patch.outboundToken !== undefined) {
+    const value = patch.outboundToken?.trim();
+    if (value) next.outboundToken = value;
+    else delete next.outboundToken;
+  }
+
+  store[key] = next;
+  writeLocalConfig(store);
+  return next;
+}
+
+/** Whether the local-dev hotel has an implicit inbound secret for a channel. */
+function localDevHasSecret(channelType: ManagedChannelType): boolean {
+  // The local-dev Instagram channel ships with the shared test secret;
+  // WhatsApp has none until configured against a real workspace.
+  return channelType === "instagram";
+}
+
 function safeOperationalError(error: string | null | undefined): string | null {
   if (!error) return null;
   const trimmed = error.trim();
@@ -410,11 +557,22 @@ function toServerConfig(
 
 function toDisplay(config: ServerConnectedChannelConfig, origin?: string): ConnectedChannelDisplay {
   const secretAvailable = Boolean(config.inboundSecret);
+  const isWebhookChannel = config.channelType === "instagram" || config.channelType === "whatsapp";
+  const hasOutboundUrl = Boolean(config.outboundUrl);
+  const hasOutboundToken = Boolean(config.outboundToken);
+  const readiness: ChannelReadiness = isWebhookChannel
+    ? deriveChannelReadiness({
+        hasSecret: secretAvailable,
+        hasOutboundUrl,
+        hasOutboundToken,
+      })
+    : "connected";
 
   return {
     channelType: config.channelType,
     displayName: displayName(config.channelType),
     status: config.status,
+    readiness,
     lastConnectedAt: config.lastConnectedAt?.toISOString() ?? null,
     lastError: config.status === "error" ? config.lastError : null,
     webhookState:
@@ -425,11 +583,61 @@ function toDisplay(config: ServerConnectedChannelConfig, origin?: string): Conne
       workspaceId: config.hotelId,
       hotelId: config.hotelId,
       status: config.status,
+      readiness,
       connectionHealth: connectionHealth(config.status),
       secret: {
         available: secretAvailable,
         masked: maskSecret(config.inboundSecret),
         copyAllowed: secretAvailable && isInternalDevSafeMode(),
+      },
+      outbound: {
+        url: isWebhookChannel ? config.outboundUrl ?? null : null,
+        urlConfigured: hasOutboundUrl,
+        tokenConfigured: hasOutboundToken,
+        tokenMasked: maskSecret(config.outboundToken),
+      },
+    },
+  };
+}
+
+function localDevWebhookChannel(
+  hotelId: string,
+  channelType: Extract<ManagedChannelType, "instagram" | "whatsapp">,
+  origin?: string
+): ConnectedChannelDisplay {
+  const hasSecret = localDevHasSecret(channelType);
+  const stored = getLocalOutboundConfig(hotelId, channelType);
+  const hasOutboundUrl = Boolean(stored.outboundUrl);
+  const hasOutboundToken = Boolean(stored.outboundToken);
+  const readiness = deriveChannelReadiness({ hasSecret, hasOutboundUrl, hasOutboundToken });
+  const status: ChannelHealthStatus = readiness === "connected" ? "active" : "pending";
+
+  return {
+    channelType,
+    displayName: channelType === "instagram" ? "Instagram" : "WhatsApp",
+    status,
+    readiness,
+    lastConnectedAt: null,
+    lastError: null,
+    webhookState: hasSecret ? "ready" : "not_configured",
+    setup: {
+      channelType,
+      inboundWebhookUrl: channelWebhookUrl(origin, channelType),
+      workspaceId: hotelId,
+      hotelId,
+      status,
+      readiness,
+      connectionHealth: connectionHealth(status),
+      secret: {
+        available: hasSecret,
+        masked: hasSecret ? maskSecret(MANYCHAT_LOCAL_TEST_SECRET) : null,
+        copyAllowed: hasSecret && isInternalDevSafeMode(),
+      },
+      outbound: {
+        url: stored.outboundUrl ?? null,
+        urlConfigured: hasOutboundUrl,
+        tokenConfigured: hasOutboundToken,
+        tokenMasked: maskSecret(stored.outboundToken),
       },
     },
   };
@@ -441,6 +649,7 @@ function localDevDisplayChannels(hotelId: string, origin?: string): ConnectedCha
       channelType: "web_chat",
       displayName: "Web Chat",
       status: "active",
+      readiness: "connected",
       lastConnectedAt: null,
       lastError: null,
       webhookState: "ready",
@@ -450,56 +659,23 @@ function localDevDisplayChannels(hotelId: string, origin?: string): ConnectedCha
         workspaceId: hotelId,
         hotelId,
         status: "active",
+        readiness: "connected",
         connectionHealth: "healthy",
         secret: {
           available: false,
           masked: null,
           copyAllowed: false,
         },
-      },
-    },
-    {
-      channelType: "instagram",
-      displayName: "Instagram",
-      status: "active",
-      lastConnectedAt: null,
-      lastError: null,
-      webhookState: "ready",
-      setup: {
-        channelType: "instagram",
-        inboundWebhookUrl: channelWebhookUrl(origin, "instagram"),
-        workspaceId: hotelId,
-        hotelId,
-        status: "active",
-        connectionHealth: "healthy",
-        secret: {
-          available: true,
-          masked: maskSecret(MANYCHAT_LOCAL_TEST_SECRET),
-          copyAllowed: isInternalDevSafeMode(),
+        outbound: {
+          url: null,
+          urlConfigured: false,
+          tokenConfigured: false,
+          tokenMasked: null,
         },
       },
     },
-    {
-      channelType: "whatsapp",
-      displayName: "WhatsApp",
-      status: "pending",
-      lastConnectedAt: null,
-      lastError: null,
-      webhookState: "not_configured",
-      setup: {
-        channelType: "whatsapp",
-        inboundWebhookUrl: channelWebhookUrl(origin, "whatsapp"),
-        workspaceId: hotelId,
-        hotelId,
-        status: "pending",
-        connectionHealth: "pending",
-        secret: {
-          available: false,
-          masked: null,
-          copyAllowed: false,
-        },
-      },
-    },
+    localDevWebhookChannel(hotelId, "instagram", origin),
+    localDevWebhookChannel(hotelId, "whatsapp", origin),
   ];
 }
 
@@ -749,6 +925,168 @@ export async function rotateChannelSecret(input: RotateChannelSecretInput): Prom
     secret: copyAllowed ? nextSecret : undefined,
     copyAllowed,
     stored: true,
+  };
+}
+
+type UpdateOutboundConfigInput = {
+  hotelId: string;
+  channelType: Extract<ManagedChannelType, "instagram" | "whatsapp">;
+  /** undefined = leave unchanged; "" / null = clear; string = set. */
+  outboundUrl?: string | null;
+  outboundToken?: string | null;
+};
+
+export type UpdateOutboundConfigResult = {
+  channelType: UpdateOutboundConfigInput["channelType"];
+  readiness: ChannelReadiness;
+  outbound: ChannelOutboundConfig;
+  stored: boolean;
+};
+
+/**
+ * Persist outbound URL/token for a ManyChat-backed channel through the existing
+ * connected_channels configuration (no new tables). In local dev the values are
+ * stored in the same file-backed store used for channel health so operators can
+ * configure connectivity without a database.
+ */
+export async function updateOutboundConfig(
+  input: UpdateOutboundConfigInput
+): Promise<UpdateOutboundConfigResult> {
+  if (
+    process.env.NODE_ENV !== "production" &&
+    input.hotelId === MANYCHAT_LOCAL_TEST_HOTEL_ID
+  ) {
+    const next = setLocalOutboundConfig(input.hotelId, input.channelType, {
+      outboundUrl: input.outboundUrl,
+      outboundToken: input.outboundToken,
+    });
+    const hasOutboundUrl = Boolean(next.outboundUrl);
+    const hasOutboundToken = Boolean(next.outboundToken);
+
+    return {
+      channelType: input.channelType,
+      readiness: deriveChannelReadiness({
+        hasSecret: localDevHasSecret(input.channelType),
+        hasOutboundUrl,
+        hasOutboundToken,
+      }),
+      outbound: {
+        url: next.outboundUrl ?? null,
+        urlConfigured: hasOutboundUrl,
+        tokenConfigured: hasOutboundToken,
+        tokenMasked: maskSecret(next.outboundToken),
+      },
+      stored: true,
+    };
+  }
+
+  const database = assertDb();
+  const provider = "manychat" as const;
+
+  const [existing] = await database
+    .select({
+      id: channels.id,
+      inboundSecret: channels.inboundSecret,
+      legacySecret: channels.secret,
+      outboundUrl: channels.outboundUrl,
+      outboundToken: channels.outboundToken,
+      metadata: channels.metadata,
+    })
+    .from(channels)
+    .where(and(eq(channels.hotelId, input.hotelId), eq(channels.channelType, input.channelType)))
+    .orderBy(desc(channels.createdAt))
+    .limit(1);
+
+  const existingMetadata = metadataRecord(existing?.metadata);
+  const inboundSecret =
+    existing?.inboundSecret ?? existing?.legacySecret ?? metadataSecret(existingMetadata);
+
+  const resolveNext = (incoming: string | null | undefined, current: string | null | undefined) => {
+    if (incoming === undefined) return current ?? null;
+    const trimmed = incoming?.trim();
+    return trimmed ? trimmed : null;
+  };
+
+  const nextUrl = resolveNext(input.outboundUrl, existing?.outboundUrl);
+  const nextToken = resolveNext(input.outboundToken, existing?.outboundToken);
+
+  if (existing?.id) {
+    await database
+      .update(channels)
+      .set({ provider, outboundUrl: nextUrl, outboundToken: nextToken })
+      .where(eq(channels.id, existing.id));
+  } else {
+    await database.insert(channels).values({
+      hotelId: input.hotelId,
+      provider,
+      channelType: input.channelType,
+      status: "pending",
+      outboundUrl: nextUrl,
+      outboundToken: nextToken,
+    });
+  }
+
+  const hasOutboundUrl = Boolean(nextUrl);
+  const hasOutboundToken = Boolean(nextToken);
+
+  return {
+    channelType: input.channelType,
+    readiness: deriveChannelReadiness({
+      hasSecret: Boolean(inboundSecret),
+      hasOutboundUrl,
+      hasOutboundToken,
+    }),
+    outbound: {
+      url: nextUrl,
+      urlConfigured: hasOutboundUrl,
+      tokenConfigured: hasOutboundToken,
+      tokenMasked: maskSecret(nextToken ?? undefined),
+    },
+    stored: true,
+  };
+}
+
+/** Resolve configuration-completeness readiness for a single channel. */
+export async function getChannelReadinessState(
+  hotelId: string,
+  channelType: ManagedChannelType
+): Promise<{
+  readiness: ChannelReadiness;
+  hasSecret: boolean;
+  hasOutboundUrl: boolean;
+  hasOutboundToken: boolean;
+}> {
+  if (channelType === "web_chat") {
+    return {
+      readiness: "connected",
+      hasSecret: true,
+      hasOutboundUrl: true,
+      hasOutboundToken: true,
+    };
+  }
+
+  if (process.env.NODE_ENV !== "production" && hotelId === MANYCHAT_LOCAL_TEST_HOTEL_ID) {
+    const stored = getLocalOutboundConfig(hotelId, channelType);
+    const hasSecret = localDevHasSecret(channelType);
+    const hasOutboundUrl = Boolean(stored.outboundUrl);
+    const hasOutboundToken = Boolean(stored.outboundToken);
+    return {
+      readiness: deriveChannelReadiness({ hasSecret, hasOutboundUrl, hasOutboundToken }),
+      hasSecret,
+      hasOutboundUrl,
+      hasOutboundToken,
+    };
+  }
+
+  const config = await getConnectedChannel(hotelId, channelType);
+  const hasSecret = Boolean(config?.inboundSecret);
+  const hasOutboundUrl = Boolean(config?.outboundUrl);
+  const hasOutboundToken = Boolean(config?.outboundToken);
+  return {
+    readiness: deriveChannelReadiness({ hasSecret, hasOutboundUrl, hasOutboundToken }),
+    hasSecret,
+    hasOutboundUrl,
+    hasOutboundToken,
   };
 }
 
