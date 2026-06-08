@@ -29,6 +29,7 @@ import {
   recordReservationLifecycleEvent,
 } from "@/lib/server/reservations/lifecycle";
 import { getLatestPaymentEvent } from "@/lib/server/payments/payment-runtime";
+import { detectLanguage } from "@/lib/i18n/detect-language";
 
 type ConversationRow = {
   conversation: typeof conversations.$inferSelect;
@@ -342,7 +343,7 @@ export async function ingestGuestMessage(
     params.hotelId,
     params.guestName,
     phone,
-    params.language
+    params.language ?? detectLanguage(params.message) ?? undefined
   );
 
   let conversationId = params.conversationId;
@@ -462,6 +463,8 @@ export async function ingestManychatMessage(
     externalSessionId
   );
 
+  const detectedLanguage = detectLanguage(params.message) ?? undefined;
+
   let contact =
     existingConversation?.contact ??
     (await findOrCreateContact(
@@ -469,13 +472,14 @@ export async function ingestManychatMessage(
       params.hotelId,
       normalizedName,
       params.guestPhone?.trim() || fallbackPhone,
-      undefined
+      detectedLanguage
     ));
 
   if (existingConversation?.contact.id || params.guestPhone?.trim()) {
     contact = await updateContactProfile(database, contact.id, {
       guestName: normalizedName,
       guestPhone: params.guestPhone?.trim(),
+      language: detectedLanguage,
     });
   }
 

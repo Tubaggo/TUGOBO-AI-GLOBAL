@@ -1,12 +1,48 @@
 import { HOTEL_OPERATIONS_ASSISTANT_V1 } from "@tugobo/core/prompts";
 import type { AiOperationMode, AiRespondRequest } from "../types";
 
+// Maps a BCP-47-ish language code (case-insensitive) to its English language
+// name. Used to turn the detected `guest.language` code into an explicit,
+// authoritative reply-language directive in the system prompt. Region suffixes
+// (e.g. "en-GB", "pt_BR") are normalized to the base code before lookup.
+const LANGUAGE_NAMES: Record<string, string> = {
+  tr: "Turkish",
+  en: "English",
+  ru: "Russian",
+  de: "German",
+  fr: "French",
+  it: "Italian",
+  pt: "Portuguese",
+};
+
+function resolveLanguageName(language: string | undefined): string | null {
+  if (!language) return null;
+  const base = language.trim().toLowerCase().split(/[-_]/)[0] ?? "";
+  return LANGUAGE_NAMES[base] ?? null;
+}
+
+function buildLanguageDirective(language: string | undefined): string {
+  const name = resolveLanguageName(language);
+
+  if (!name) {
+    // No recognized code → keep the prior heuristic behavior.
+    return "Reply in the guest's language when clear; default Turkish if unclear.";
+  }
+
+  return [
+    `Guest language: ${name}.`,
+    `You MUST write the reply field in ${name}.`,
+    `guestSummary must remain Turkish for hotel staff.`,
+  ].join("\n");
+}
+
 export function buildHotelAssistantSystemPrompt(
   mode: AiOperationMode,
   ctx: Pick<AiRespondRequest, "guest" | "reservationContext" | "hotelPolicy">
 ): string {
   const hotelName = ctx.hotelPolicy?.hotelName ?? "otel";
   const base = HOTEL_OPERATIONS_ASSISTANT_V1(hotelName, mode);
+  const languageDirective = buildLanguageDirective(ctx.guest?.language);
 
   return `
 ${base}
@@ -14,7 +50,7 @@ ${base}
 You are NOT a generic chatbot. You assist the hotel team; humans keep authority.
 
 Tone: warm, concise, professional, Turkish hospitality-native, helpful, non-robotic.
-Reply in the guest's language when clear; default Turkish if unclear.
+${languageDirective}
 
 You help with:
 - answering guest questions

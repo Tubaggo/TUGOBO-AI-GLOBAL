@@ -1,5 +1,6 @@
 import type { IngestChannelMessageInput, OperationConversation } from "./types";
 import { STAGE_STATUS_LABELS } from "./channelLabels";
+import { detectLanguage } from "../i18n/detect-language";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -68,7 +69,7 @@ export function createConversationFromIngest(
     messages: [],
     externalId: input.externalId,
     guestPhone: input.guestPhone,
-    language: input.language ?? "TR",
+    language: input.language ?? detectLanguage(input.message) ?? "TR",
   };
 }
 
