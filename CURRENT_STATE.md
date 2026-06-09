@@ -4,7 +4,7 @@
 > repository so any future Claude/agent session can continue without re-deriving context.
 > It is documentation only — no runtime behavior, schema, or product code is changed by this file.
 >
-> Last reviewed: 2026-06-08 · Branch: `main`
+> Last reviewed: 2026-06-09 · Branch: `main` · Sprint P-1 (VPS deployment audit) ✅
 
 ---
 
@@ -142,8 +142,9 @@ parallel ingestion path). The simulator returns 404 in production.
 - **Pilot readiness: near-ready, gated on real channels + VPS.** The runtime, lifecycle engines,
   persistence, and channel readiness layer are in place. A pilot still needs a real channel
   connection (Instagram/WhatsApp) and a deployed production environment.
-- **Production readiness: not yet.** Code-level environment hardening is done, but no VPS
-  infrastructure, web server, process manager, SSL, production Supabase, or DNS cutover exists yet.
+- **Production readiness: code-ready, infrastructure pending.** All code-level requirements are
+  met (env hardening, fail-fast guard, build scripts, production safety guards). The remaining
+  blockers are purely infrastructure: VPS provisioning, Nginx, PM2, SSL, Supabase, DNS.
 
 ---
 
@@ -161,14 +162,24 @@ parallel ingestion path). The simulator returns 404 in production.
 
 **Completed:**
 - Production environment hardening (startup fail-fast guard + env validation + `.env.example`).
+- DEPLOY-3B: Drizzle migration path fixed (`out: "./migrations"`).
+- DEPLOY-5 / DEPLOY-5B: Migration strategy documented; manual SQL is authoritative.
+- **Sprint P-1 (2026-06-09):** Full VPS deployment audit completed.
+  - Environment variables verified: all mandatory guards in place, no secrets in `.env.example`.
+  - Build commands verified: `pnpm build` / `pnpm --filter web start` / `--max-old-space-size=4096`.
+  - Production safety confirmed: simulator returns 404, dev-events blocked, no hardcoded localhost.
+  - **Schema deployment path clarified:** fresh Supabase → `db:push`; upgrading existing → 0001–0004.
+  - Type-check and build both pass clean.
+  - DEPLOYMENT.md updated with two-path schema strategy (§6.2 Path A / Path B).
 
-**Pending:**
-- VPS infrastructure
-- Nginx (reverse proxy)
-- PM2 / systemd (process management)
-- SSL certificates
-- Production Supabase
-- DNS cutover
+**Pending (infrastructure — not code):**
+- VPS provisioning (Hostinger KVM, Ubuntu 24.04)
+- Nginx reverse proxy configuration
+- PM2 process management + startup persistence
+- SSL certificates (Let's Encrypt / certbot)
+- Production Supabase project creation + schema deployment (`db:push`)
+- Pilot hotel row seeding (`hotels` table, UUID → `PILOT_HOTEL_ID`)
+- DNS cutover (`app.tugobo.com` → VPS IP)
 
 ---
 
@@ -187,11 +198,15 @@ parallel ingestion path). The simulator returns 404 in production.
 
 ## 10. Recommended Next Step
 
-**DEPLOY-3 — VPS Infrastructure Readiness.**
+**DEPLOY-P2 — VPS Infrastructure Execution.**
 
-Stand up the production environment: VPS provisioning, Nginx reverse proxy, PM2/systemd process
-management, SSL, production Supabase, and DNS cutover — building on the completed environment
-hardening to move from demo/pilot-ready code to a live, deployed runtime.
+The code is deployment-ready (Sprint P-1 ✅). Stand up the production environment following
+DEPLOYMENT.md exactly:
+1. Provision Hostinger VPS (Ubuntu 24.04, 8 GB RAM / 2–4 vCPU / 80 GB NVMe).
+2. Create production Supabase project → run `pnpm --filter @tugobo/db db:push` (§6.2, Path A).
+3. Seed pilot hotel row; set `PILOT_HOTEL_ID` / `NEXT_PUBLIC_PILOT_HOTEL_ID`.
+4. Configure Nginx reverse proxy + Let's Encrypt SSL.
+5. Start app under PM2; confirm all §11 smoke tests pass.
 
 ---
 

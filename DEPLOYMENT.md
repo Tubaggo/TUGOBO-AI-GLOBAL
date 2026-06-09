@@ -209,10 +209,11 @@ NEXT_PUBLIC_WHATSAPP_CONTACT=https://wa.me/<number>
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `DATABASE_URL` → Project Settings → Database → Connection string (use the **direct**
      `db.<ref>.supabase.co:5432` string).
-3. **Apply migrations before first start** — use the manual SQL strategy in **§6**. Migrations
-   live in `packages/db/migrations/` (`0001 → 0004`). **Do NOT use `db:migrate` for initial
-   production deployment** — the Drizzle journal is absent; see §6.1 for the current status and
-   §6.2 for the authoritative execution steps.
+3. **Apply schema before first start** — see **§6**. Choose the correct path:
+   - **Fresh Supabase project** (new production DB): use `db:push` (§6.2, Path A).
+   - **Existing Supabase project** (upgrading from pre-Sprint 23 schema): run 0001–0004 manually
+     (§6.2, Path B).
+   **Do NOT use `db:migrate`** — the Drizzle journal is absent; see §6.1.
 4. **Seed the pilot hotel row** in the `hotels` table, then set `PILOT_HOTEL_ID` and
    `NEXT_PUBLIC_PILOT_HOTEL_ID` to that UUID (both must match).
 5. **Auth callback URL** → Authentication → URL Configuration:
@@ -251,9 +252,44 @@ has no record of what to apply and will silently apply nothing.
 > ⚠️ **INITIAL PRODUCTION DEPLOYMENT: Do NOT run `pnpm --filter @tugobo/db db:migrate`.**
 > It will silently apply nothing and leave the production database missing required schema.
 
-Apply the four migrations **manually**, in numeric order, before starting the application:
+There are two paths depending on whether you are setting up a **fresh** Supabase project or
+**upgrading an existing** one. Choose the correct path — do not mix them.
 
-**Option A — psql (recommended for VPS deploy)**
+---
+
+#### Path A — Fresh Supabase project (new production database, no prior schema)
+
+> Use this path for the first VPS production deployment.
+
+The 0001–0004 SQL files are **additive migrations** on top of a pre-existing base schema.
+`0002` in particular contains `INSERT INTO connected_channels SELECT FROM channels`, which
+requires a legacy `channels` table that does not exist in a fresh Supabase project. Running
+0001–0004 on a blank database will fail at `0002`.
+
+**Correct approach: use `drizzle-kit push`.** This creates the full current schema (the
+post-migration end-state as defined in the Drizzle schema files) directly, without needing
+the migration history:
+
+```bash
+# DATABASE_URL must be exported in the current shell
+# drizzle-kit push may prompt for confirmation — type 'y' or press Enter to accept
+pnpm --filter @tugobo/db db:push
+```
+
+After `db:push` completes, the database schema matches the Drizzle schema definitions exactly.
+The 0001–0004 SQL files have already been applied (their changes are baked into the schema
+definitions) — **do not run them again**.
+
+---
+
+#### Path B — Existing Supabase project (upgrading from pre-Sprint 23 schema)
+
+> Use this path only if the target database already has the base tables (hotels, conversations,
+> messages, contacts, channels) from an earlier version of the project.
+
+Apply the four migrations **manually**, in numeric order:
+
+**Option B-1 — psql**
 ```bash
 # DATABASE_URL must be exported in the current shell
 psql "$DATABASE_URL" -f packages/db/migrations/0001_sprint23_live_ops.sql
@@ -262,7 +298,7 @@ psql "$DATABASE_URL" -f packages/db/migrations/0003_manychat_bridge_config.sql
 psql "$DATABASE_URL" -f packages/db/migrations/0004_channel_connection_state.sql
 ```
 
-**Option B — Supabase SQL Editor**
+**Option B-2 — Supabase SQL Editor**
 Open each file in numeric order and paste its contents into the Supabase SQL editor, executing
 one file at a time. Verify success before proceeding to the next file.
 
@@ -305,13 +341,16 @@ pnpm install --frozen-lockfile
 # 2. type-check gate
 pnpm --filter web type-check
 
-# 3. apply DB schema — manual SQL execution required (see §6.2); do NOT use db:migrate
-#    Run psql commands from §6.2 here, or confirm migrations were already applied via Supabase SQL Editor.
-#    Example (if DATABASE_URL is exported):
-psql "$DATABASE_URL" -f packages/db/migrations/0001_sprint23_live_ops.sql
-psql "$DATABASE_URL" -f packages/db/migrations/0002_multi_hotel_workspace_foundation.sql
-psql "$DATABASE_URL" -f packages/db/migrations/0003_manychat_bridge_config.sql
-psql "$DATABASE_URL" -f packages/db/migrations/0004_channel_connection_state.sql
+# 3. apply DB schema — see §6.2 for the correct path; do NOT use db:migrate
+#
+#    FRESH Supabase project (new production DB — use this for initial pilot deploy):
+pnpm --filter @tugobo/db db:push
+#
+#    EXISTING Supabase project (upgrading from pre-Sprint 23 schema — use this if base tables exist):
+# psql "$DATABASE_URL" -f packages/db/migrations/0001_sprint23_live_ops.sql
+# psql "$DATABASE_URL" -f packages/db/migrations/0002_multi_hotel_workspace_foundation.sql
+# psql "$DATABASE_URL" -f packages/db/migrations/0003_manychat_bridge_config.sql
+# psql "$DATABASE_URL" -f packages/db/migrations/0004_channel_connection_state.sql
 
 # 4. production build (forces 4 GB Node heap)
 pnpm build
@@ -496,20 +535,25 @@ key. Note `TUGOBO_AI_PROVIDER=mock` and a localhost `NEXT_PUBLIC_APP_URL` are ex
 
 **Migrations not applied / tables or columns missing**
 Symptom: app starts but tables/columns are missing, queries fail, or schema errors appear in logs.
-Root cause: `drizzle-kit migrate` is not authoritative for this repo — see **§6.1** for the full
-explanation. The Drizzle journal (`meta/_journal.json`) is absent, so `db:migrate` silently applies
-nothing.
-Fix — apply the SQL manually in numeric order against the production DB (see **§6.2** for full
-instructions):
+
+Possible cause 1 — `db:migrate` was used on a fresh Supabase project.
+`0002` requires a legacy `channels` table; on a fresh DB it fails with
+`relation "channels" does not exist`. See **§6.2, Path A**.
+Fix: run `pnpm --filter @tugobo/db db:push` against the fresh database to create the full
+current schema in one step.
+
+Possible cause 2 — `drizzle-kit migrate` was run (journal absent).
+The Drizzle journal (`meta/_journal.json`) is absent, so `db:migrate` silently applies nothing.
+See **§6.1** for the full explanation.
+Fix (existing Supabase / upgrade path): apply SQL manually in numeric order (see **§6.2, Path B**):
 ```bash
 psql "$DATABASE_URL" -f packages/db/migrations/0001_sprint23_live_ops.sql
 psql "$DATABASE_URL" -f packages/db/migrations/0002_multi_hotel_workspace_foundation.sql
 psql "$DATABASE_URL" -f packages/db/migrations/0003_manychat_bridge_config.sql
 psql "$DATABASE_URL" -f packages/db/migrations/0004_channel_connection_state.sql
 ```
-(Or paste each file into the Supabase SQL editor in numeric order.) Re-run is safe only if the SQL
-is idempotent — verify before re-applying. To enable `db:migrate` in future deploys, complete
-DEPLOY-5C (§6.3).
+Re-run is safe only if the SQL is idempotent — verify before re-applying. To enable `db:migrate`
+in future deploys, complete DEPLOY-5C (§6.3).
 
 **Nginx 502 Bad Gateway**
 Cause: the Next.js process isn't listening on `127.0.0.1:3000`.
