@@ -4,7 +4,8 @@
 > the operator panel at **`app.tugobo.com`**.
 >
 > Status of prior stages: DEPLOY-1 (audit) ✅ · DEPLOY-2 (env hardening) ✅ ·
-> DEPLOY-3 (VPS readiness plan) ✅ · DEPLOY-3B (migration path fix) ✅.
+> DEPLOY-3 (VPS readiness plan) ✅ · DEPLOY-3B (migration path fix) ✅ ·
+> DEPLOY-5 (migration strategy clarified) ✅.
 >
 > This document is operational documentation only. It changes no runtime behavior.
 > Run every command as the **`tugobo`** deploy user unless a step says `sudo`/`root`.
@@ -208,9 +209,10 @@ NEXT_PUBLIC_WHATSAPP_CONTACT=https://wa.me/<number>
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `DATABASE_URL` → Project Settings → Database → Connection string (use the **direct**
      `db.<ref>.supabase.co:5432` string).
-3. **Apply migrations before first start** (see §6). Migrations live in
-   `packages/db/migrations/` (`0001 → 0004`); `drizzle.config.ts` `out` now points there
-   (DEPLOY-3B fix).
+3. **Apply migrations before first start** — use the manual SQL strategy in **§6**. Migrations
+   live in `packages/db/migrations/` (`0001 → 0004`). **Do NOT use `db:migrate` for initial
+   production deployment** — the Drizzle journal is absent; see §6.1 for the current status and
+   §6.2 for the authoritative execution steps.
 4. **Seed the pilot hotel row** in the `hotels` table, then set `PILOT_HOTEL_ID` and
    `NEXT_PUBLIC_PILOT_HOTEL_ID` to that UUID (both must match).
 5. **Auth callback URL** → Authentication → URL Configuration:
@@ -222,7 +224,77 @@ NEXT_PUBLIC_WHATSAPP_CONTACT=https://wa.me/<number>
 
 ---
 
-## 6. Build and Start
+## 6. Database Migration Strategy
+
+> **Read this section before running any database commands.** The migration tooling has a known
+> constraint that makes `drizzle-kit migrate` unsafe for initial production deployment. Manual SQL
+> execution is the required strategy until that constraint is resolved (see §6.3).
+
+### Migration Status
+
+Current state as of DEPLOY-5 inspection:
+
+| Item | Status |
+|---|---|
+| `drizzle.config.ts` `out` path | ✅ Fixed — points to `packages/db/migrations/` (DEPLOY-3B) |
+| Migration files `0001–0004` | ✅ Present in `packages/db/migrations/` |
+| `packages/db/migrations/meta/_journal.json` | ❌ **Absent** — not committed |
+| `pnpm --filter @tugobo/db db:migrate` | ❌ **Not authoritative** for initial production deployment |
+
+**Root cause:** `drizzle-kit migrate` tracks applied migrations via a journal file
+(`meta/_journal.json`). The four SQL files in this repo (`0001–0004`) are hand-authored and were
+never processed by `drizzle-kit generate`, so no journal exists. Without a journal, `db:migrate`
+has no record of what to apply and will silently apply nothing.
+
+### Production Migration Strategy
+
+> ⚠️ **INITIAL PRODUCTION DEPLOYMENT: Do NOT run `pnpm --filter @tugobo/db db:migrate`.**
+> It will silently apply nothing and leave the production database missing required schema.
+
+Apply the four migrations **manually**, in numeric order, before starting the application:
+
+**Option A — psql (recommended for VPS deploy)**
+```bash
+# DATABASE_URL must be exported in the current shell
+psql "$DATABASE_URL" -f packages/db/migrations/0001_sprint23_live_ops.sql
+psql "$DATABASE_URL" -f packages/db/migrations/0002_multi_hotel_workspace_foundation.sql
+psql "$DATABASE_URL" -f packages/db/migrations/0003_manychat_bridge_config.sql
+psql "$DATABASE_URL" -f packages/db/migrations/0004_channel_connection_state.sql
+```
+
+**Option B — Supabase SQL Editor**
+Open each file in numeric order and paste its contents into the Supabase SQL editor, executing
+one file at a time. Verify success before proceeding to the next file.
+
+**Important notes:**
+- Apply in strict numeric order (`0001` → `0002` → `0003` → `0004`). Later migrations may
+  depend on schema introduced by earlier ones.
+- Each SQL file uses `IF NOT EXISTS` / `IF EXISTS` guards where possible — re-running a file
+  against an already-migrated schema is generally safe, but verify before re-applying.
+- Do not skip or reorder files.
+
+### Future Improvement
+
+**Candidate task: DEPLOY-5C — Drizzle Migration Journal Generation**
+
+To enable `pnpm --filter @tugobo/db db:migrate` for future deployments, a proper Drizzle
+journal must be generated and committed:
+
+1. Ensure `packages/db/migrations/` contains the finalized `0001–0004` SQL files.
+2. Run `pnpm --filter @tugobo/db db:generate` against the current schema on a clean dev
+   environment to produce `packages/db/migrations/meta/_journal.json` (and
+   `meta/0000_snapshot.json`).
+3. Commit the generated `meta/` directory alongside the existing SQL files.
+4. Validate by running `pnpm --filter @tugobo/db db:migrate` against a staging Supabase project
+   and confirming all four migrations are applied in order.
+
+**This task is not required for pilot deployment.** Manual SQL execution via psql or the
+Supabase SQL editor is safe, deterministic, and sufficient for the initial production go-live.
+`db:migrate` automation can be added in a follow-up deployment sprint.
+
+---
+
+## 7. Build and Start
 
 Run from `/var/www/tugobo-ai` with `.env.production` in place.
 
@@ -233,9 +305,13 @@ pnpm install --frozen-lockfile
 # 2. type-check gate
 pnpm --filter web type-check
 
-# 3. apply DB schema to production Supabase (DATABASE_URL must be set in the shell/env)
-pnpm --filter @tugobo/db db:migrate
-#    See §13 if this reports nothing applied (journal caveat) — fall back to manual psql.
+# 3. apply DB schema — manual SQL execution required (see §6.2); do NOT use db:migrate
+#    Run psql commands from §6.2 here, or confirm migrations were already applied via Supabase SQL Editor.
+#    Example (if DATABASE_URL is exported):
+psql "$DATABASE_URL" -f packages/db/migrations/0001_sprint23_live_ops.sql
+psql "$DATABASE_URL" -f packages/db/migrations/0002_multi_hotel_workspace_foundation.sql
+psql "$DATABASE_URL" -f packages/db/migrations/0003_manychat_bridge_config.sql
+psql "$DATABASE_URL" -f packages/db/migrations/0004_channel_connection_state.sql
 
 # 4. production build (forces 4 GB Node heap)
 pnpm build
@@ -265,7 +341,7 @@ pm2 restart tugobo-web
 
 ---
 
-## 7. Nginx Configuration
+## 8. Nginx Configuration
 
 `/etc/nginx/sites-available/app.tugobo.com`:
 ```nginx
@@ -283,7 +359,7 @@ server {
     listen [::]:443 ssl http2;
     server_name app.tugobo.com;
 
-    # certbot --nginx fills in ssl_certificate / ssl_certificate_key (see §8)
+    # certbot --nginx fills in ssl_certificate / ssl_certificate_key (see §9)
 
     client_max_body_size 10m;
 
@@ -310,7 +386,7 @@ sudo systemctl reload nginx
 
 ---
 
-## 8. SSL Setup (Let's Encrypt / certbot)
+## 9. SSL Setup (Let's Encrypt / certbot)
 
 ```bash
 sudo apt -y install snapd
@@ -318,7 +394,7 @@ sudo snap install core && sudo snap refresh core
 sudo snap install --classic certbot
 sudo ln -s /snap/bin/certbot /usr/bin/certbot
 
-# DNS for app.tugobo.com must resolve to the VPS first (see §9)
+# DNS for app.tugobo.com must resolve to the VPS first (see §10)
 sudo certbot --nginx -d app.tugobo.com
 
 # auto-renewal is a systemd timer; verify:
@@ -327,7 +403,7 @@ sudo certbot renew --dry-run
 
 ---
 
-## 9. DNS Setup
+## 10. DNS Setup
 
 Point `app.tugobo.com` at the VPS (Hostinger DNS / registrar):
 
@@ -345,7 +421,7 @@ dig +short app.tugobo.com      # must return the VPS IP
 
 ---
 
-## 10. Smoke Tests
+## 11. Smoke Tests
 
 Run after deploy; all must pass:
 
@@ -365,7 +441,7 @@ Run after deploy; all must pass:
 
 ---
 
-## 11. Rollback Plan
+## 12. Rollback Plan
 
 **Restart / inspect first:**
 ```bash
@@ -397,7 +473,7 @@ sudo tail -f /var/log/nginx/access.log
 
 ---
 
-## 12. Known Limitations
+## 13. Known Limitations
 
 - **Real Instagram not connected** — validated only via the ManyChat-style simulator (404 in prod).
 - **Real WhatsApp not production-ready** — no live WhatsApp path yet.
@@ -411,18 +487,20 @@ sudo tail -f /var/log/nginx/access.log
 
 ---
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 
 **Env fail-fast crash at startup**
 Symptom: process exits immediately with `Production environment validation failed: - Missing required production env: …`.
 Fix: the named var(s) are missing/invalid in `.env.production`. Set all of §4.1–§4.4 + the provider
 key. Note `TUGOBO_AI_PROVIDER=mock` and a localhost `NEXT_PUBLIC_APP_URL` are explicitly rejected.
 
-**Migrations not applied**
-Symptom: app starts but tables/columns are missing, or `db:migrate` reports nothing applied.
-Cause: `drizzle-kit migrate` tracks state via `packages/db/migrations/meta/_journal.json`, which is
-not present in this repo (migrations are hand-written SQL `0001 → 0004`).
-Fix — apply the SQL manually in order against the production DB:
+**Migrations not applied / tables or columns missing**
+Symptom: app starts but tables/columns are missing, queries fail, or schema errors appear in logs.
+Root cause: `drizzle-kit migrate` is not authoritative for this repo — see **§6.1** for the full
+explanation. The Drizzle journal (`meta/_journal.json`) is absent, so `db:migrate` silently applies
+nothing.
+Fix — apply the SQL manually in numeric order against the production DB (see **§6.2** for full
+instructions):
 ```bash
 psql "$DATABASE_URL" -f packages/db/migrations/0001_sprint23_live_ops.sql
 psql "$DATABASE_URL" -f packages/db/migrations/0002_multi_hotel_workspace_foundation.sql
@@ -430,7 +508,8 @@ psql "$DATABASE_URL" -f packages/db/migrations/0003_manychat_bridge_config.sql
 psql "$DATABASE_URL" -f packages/db/migrations/0004_channel_connection_state.sql
 ```
 (Or paste each file into the Supabase SQL editor in numeric order.) Re-run is safe only if the SQL
-is idempotent — verify before re-applying.
+is idempotent — verify before re-applying. To enable `db:migrate` in future deploys, complete
+DEPLOY-5C (§6.3).
 
 **Nginx 502 Bad Gateway**
 Cause: the Next.js process isn't listening on `127.0.0.1:3000`.
@@ -440,7 +519,7 @@ Fix: `pm2 status` / `pm2 logs tugobo-web`. Confirm the app booted (no env crash)
 **SSL issuance fails**
 Cause: DNS not propagated, or port 80 blocked.
 Fix: `dig +short app.tugobo.com` must return the VPS IP; `sudo ufw status` must allow 80/443.
-Ensure the HTTP server block (§7) is live so the ACME HTTP-01 challenge can be served, then re-run
+Ensure the HTTP server block (§8) is live so the ACME HTTP-01 challenge can be served, then re-run
 `sudo certbot --nginx -d app.tugobo.com`.
 
 **DeepSeek provider unavailable**
